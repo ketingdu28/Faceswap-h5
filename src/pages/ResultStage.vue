@@ -227,8 +227,8 @@ async function exportCertificate() {
     }
     const photoImg = await loadImg(photoSrc)
 
-    // 2× 高清合成
-    const SCALE = 2
+    // 模板原始分辨率（2304×4096）已足够，SCALE=1 避免移动端 JPEG 编码超时
+    const SCALE = 1
     const W = templateImg.naturalWidth
     const H = templateImg.naturalHeight
     const canvas = document.createElement('canvas')
@@ -422,15 +422,6 @@ onUnmounted(() => {
     url('/magic-bg.png') center center / cover no-repeat;
 }
 
-/* 移动端不加载装饰背景图，用渐变替代，节省带宽和合成开销 */
-@media (max-width: 768px) {
-  .result-stage-bg {
-    background:
-      radial-gradient(circle at top, rgba(255, 218, 170, 0.06) 0%, rgba(255, 218, 170, 0) 28%),
-      radial-gradient(circle at 78% 18%, rgba(182, 122, 255, 0.08) 0%, rgba(182, 122, 255, 0) 24%),
-      linear-gradient(135deg, #081225 0%, #020612 100%);
-  }
-}
 
 .glow-blob {
   position: absolute;

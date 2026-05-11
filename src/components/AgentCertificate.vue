@@ -76,22 +76,26 @@ watch(() => props.imageUrl, async (url) => {
 }
 
 /*
- * 换脸照片：绝对定位铺满背景。
- * 证书模板透明的拱形区域会透出下方的照片。
+ * 换脸照片定位参数说明（对应下方 canvas 导出坐标，修改时需同步 ResultStage.vue）：
  *
- * 调整照片在拱形区域内的显示效果：
- *   object-position  ← "left top" / "center top" / "20% 10%" 等，
- *                       控制照片对准哪个部位（人脸居中建议用 "center top"）
- *   object-fit       ← cover 填满整个背景区域
+ *  top      → 照片距证书顶部的百分比，值越大照片越靠下
+ *  left     → 照片距证书左边的百分比，0 表示紧贴左边
+ *  width    → 照片宽度占证书宽度的百分比（对齐拱形宽度）
+ *  height   → 照片高度占证书高度的百分比（对齐拱形高度）
+ *
+ *  object-position → "水平 垂直" 控制照片裁切锚点
+ *    "center top"  = 水平居中 + 顶部对齐（适合全身照，脸在上方）
+ *    "center 20%"  = 水平居中 + 向下偏移 20%（脸在照片中段时使用）
+ *    "50% 10%"     = 等同于 "center 10%"
  */
 .certificate-bg-image {
   position: absolute;
-  top: 25%;         /* 拱形窗口顶部约在模板高度 25% 处 */
-  left: 0;
-  width: 50%;       /* 拱形宽度约占模板宽度 50% */
-  height: 55%;      /* 拱形高度：25%→80%，共 55% */
+  top: 29%;      /* ← 调大：照片整体下移；调小：上移 */
+  left: 0;       /* ← 调大：照片右移（如 "3%"） */
+  width: 50%;    /* ← 调大：照片变宽，覆盖更多左侧区域 */
+  height: 55%;   /* ← 调大：照片变高，向下延伸 */
   object-fit: cover;
-  object-position: center top; /* 人脸对齐拱顶 */
+  object-position: center top; /* ← 改 "center 20%" 可让脸部下移 */
   z-index: 1;
 }
 
