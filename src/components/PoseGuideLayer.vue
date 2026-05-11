@@ -264,7 +264,6 @@ const HERO_GUIDE_POINTS = HERO_POSE_LUOYANG.keypoints
 const HERO_GUIDE_EDGES: ReadonlyArray<readonly [number, number]> = HERO_POSE_LUOYANG.edges
 
 const TEMPLATE_INDICES: ReadonlyArray<number> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-const POSE_TEMPLATE_VERSION = 'HERO_FAN_POSE_0_2'
 
 const preflightMessage = computed(() => {
   const err = preflightError.value
