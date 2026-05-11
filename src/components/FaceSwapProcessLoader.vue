@@ -39,7 +39,7 @@ const isUnlocking = ref(false)
 const logs = ref<Array<{ id: number; text: string }>>([])
 const logId = ref(0)
 
-const particleList = Array.from({ length: 24 }).map((_, idx) => {
+const particleList = Array.from({ length: 8 }).map((_, idx) => {
   const left = 10 + Math.random() * 80
   const top = 10 + Math.random() * 80
   const size = 1.2 + Math.random() * 2.6
@@ -110,7 +110,7 @@ function startProgress() {
   pushLog()
   logTimer = window.setInterval(() => {
     pushLog()
-  }, 320)
+  }, 600)
 
   progressTimer = window.setInterval(() => {
     const step = Math.floor(Math.random() * 3) + 1
@@ -227,7 +227,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: -20%;
   background: radial-gradient(circle at 50% 45%, rgba(68, 217, 255, 0.22) 0%, rgba(201, 114, 255, 0.08) 40%, transparent 65%);
-  filter: blur(22px);
+  /* filter:blur 已移除，改用 opacity 动画，不触发 GPU 层重建 */
   animation: nebulaDrift 12s ease-in-out infinite alternate;
 }
 
@@ -240,10 +240,8 @@ onBeforeUnmount(() => {
     radial-gradient(circle 2px at 35% 60%, rgba(201, 114, 255, 0.18), transparent 100%),
     radial-gradient(circle 4px at 58% 18%, rgba(68, 217, 255, 0.34), transparent 100%),
     radial-gradient(circle 3px at 78% 45%, rgba(255, 138, 214, 0.14), transparent 100%),
-    radial-gradient(circle 2px at 90% 78%, rgba(255, 231, 160, 0.28), transparent 100%),
-    radial-gradient(circle 4px at 22% 85%, rgba(201, 114, 255, 0.14), transparent 100%),
-    radial-gradient(circle 2px at 65% 72%, rgba(68, 217, 255, 0.28), transparent 100%);
-  filter: blur(2px);
+    radial-gradient(circle 2px at 90% 78%, rgba(255, 231, 160, 0.28), transparent 100%);
+  /* filter:blur 移除，静态 CSS 点不需要模糊层 */
   opacity: 0.82;
 }
 
@@ -308,6 +306,7 @@ onBeforeUnmount(() => {
   top: 50%;
   border-radius: 999px;
   transform: translate(-50%, -50%);
+  will-change: transform;
 }
 
 /* Outer ring: aurora cyan */
@@ -386,9 +385,11 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: radial-gradient(circle, rgba(255, 247, 229, 0.95) 0%, rgba(68, 217, 255, 0.52) 42%, rgba(201, 114, 255, 0.22) 70%, transparent 100%);
   box-shadow: 0 0 10px rgba(68, 217, 255, calc(var(--dot-glow) * 0.8));
-  animation: coreDotFloat ease-in-out infinite, coreDotTwinkle 1.9s ease-in-out infinite;
-  animation-duration: var(--float-duration, 3s), 1.9s;
-  animation-delay: var(--float-delay, 0s), calc(var(--float-delay, 0s) * -0.4);
+  will-change: transform, opacity;
+  /* coreDotTwinkle 含 filter:blur，已移除；只保留位移动画 */
+  animation: coreDotFloat ease-in-out infinite alternate;
+  animation-duration: var(--float-duration, 3s);
+  animation-delay: var(--float-delay, 0s);
 }
 
 .status-wrap {

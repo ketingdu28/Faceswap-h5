@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Download, RotateCcw } from 'lucide-vue-next'
 import AgentCertificate from '../components/AgentCertificate.vue'
@@ -98,6 +98,54 @@ let logTimer: number | undefined
 
 const isReady = computed(() => Boolean(flow.resultImageUrl))
 const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
+
+// 预生成证书 blob：result 就绪后立即在后台合成，用户点下载时直接取用
+const cachedCertBlob = ref<Blob | null>(null)
+
+async function buildCertBlob(): Promise<Blob | null> {
+  const photoSrc = flow.resultImageUrl
+  if (!photoSrc) return null
+  try {
+    const [templateImg, photoImg] = await Promise.all([
+      loadImg(certificateTemplate),
+      loadImg(photoSrc),
+    ])
+    const W = templateImg.naturalWidth
+    const H = templateImg.naturalHeight
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#050c1d'
+    ctx.fillRect(0, 0, W, H)
+    const destX = 0
+    const destY = H * 0.25
+    const destW = W * 0.50
+    const destH = H * 0.55
+    const imgAspect = photoImg.naturalWidth / photoImg.naturalHeight
+    const destAspect = destW / destH
+    let sx = 0, sy = 0
+    let sw = photoImg.naturalWidth, sh = photoImg.naturalHeight
+    if (imgAspect > destAspect) {
+      sw = Math.round(photoImg.naturalHeight * destAspect)
+      sx = Math.round((photoImg.naturalWidth - sw) / 2)
+    } else {
+      sh = Math.round(photoImg.naturalWidth / destAspect)
+    }
+    ctx.drawImage(photoImg, sx, sy, sw, sh, destX, destY, destW, destH)
+    ctx.drawImage(templateImg, 0, 0, W, H)
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    })
+  } catch {
+    return null
+  }
+}
+
+// result 就绪后静默预生成，不影响 UI
+watch(isReady, (ready) => {
+  if (ready) buildCertBlob().then((blob) => { cachedCertBlob.value = blob })
+})
 const visibleLogs = computed(() => {
   const start = currentLogOffset.value
   return Array.from({ length: logWindowSize }).map((_, index) => logs.value[(start + index) % logs.value.length])
@@ -212,65 +260,16 @@ async function exportCertificate() {
   exportedImage.value = null
 
   try {
-    // 模板是本地资源，无跨域问题
-    const templateImg = await loadImg(certificateTemplate)
-
-    // 换脸照片优先转 base64（绕过跨域），失败则直接加载
-    let photoSrc = resultImage.value || ''
-    if (photoSrc && !photoSrc.startsWith('data:') && !photoSrc.startsWith('blob:')) {
-      try {
-        photoSrc = await toDataUrl(photoSrc)
-      } catch {
-        // 服务器无 CORS 头时 fetch 失败，保留原 URL 继续尝试
-      }
+    // 优先使用预生成的 blob（result 就绪时已在后台合成好）
+    let blob = cachedCertBlob.value
+    if (!blob) {
+      // 预生成尚未完成（极少发生），此时实时合成作为兜底
+      blob = await buildCertBlob()
     }
-    const photoImg = await loadImg(photoSrc)
-
-    // 模板原始分辨率（2304×4096）已足够，SCALE=1 避免移动端 JPEG 编码超时
-    const SCALE = 1
-    const W = templateImg.naturalWidth
-    const H = templateImg.naturalHeight
-    const canvas = document.createElement('canvas')
-    canvas.width = W * SCALE
-    canvas.height = H * SCALE
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(SCALE, SCALE)
-
-    // 深色背景：防止 JPEG 导出时透明区域变黑块（与证书深色主题一致）
-    ctx.fillStyle = '#050c1d'
-    ctx.fillRect(0, 0, W, H)
-
-    // 与 AgentCertificate.vue CSS 保持一致：top:25%, left:0, width:50%, height:55%
-    // object-fit:cover, object-position:center top
-    const destX = 0
-    const destY = H * 0.25
-    const destW = W * 0.50
-    const destH = H * 0.55
-
-    const imgAspect = photoImg.naturalWidth / photoImg.naturalHeight
-    const destAspect = destW / destH
-    let sx = 0, sy = 0
-    let sw = photoImg.naturalWidth, sh = photoImg.naturalHeight
-    if (imgAspect > destAspect) {
-      sw = Math.round(photoImg.naturalHeight * destAspect)
-      sx = Math.round((photoImg.naturalWidth - sw) / 2)
-    } else {
-      sh = Math.round(photoImg.naturalWidth / destAspect)
-      sy = 0 // object-position: top
-    }
-    ctx.drawImage(photoImg, sx, sy, sw, sh, destX, destY, destW, destH)
-
-    // 模板叠在照片上方（模板透明区域露出下方照片）
-    ctx.drawImage(templateImg, 0, 0, W, H)
-
-    // toBlob 是异步的，不阻塞主线程（toDataURL 同步编码会冻结手机 UI 1-3 秒）
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.92)
-    })
     if (!blob) throw new Error('Canvas encoding failed')
+
     const objectUrl = URL.createObjectURL(blob)
     triggerCertificateDownload(objectUrl)
-    // 延迟释放，确保浏览器有足够时间启动下载
     setTimeout(() => URL.revokeObjectURL(objectUrl), 10000)
     exportMessage.value = zh.certDownloaded
   } catch (err) {
