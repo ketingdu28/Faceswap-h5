@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #e2e8f0;
+  background: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+  background: radial-gradient(circle at center, #081225 0%, #020612 100%);
+  color: #e2e8f0;
+}
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: radial-gradient(circle at 50% 30%, #081225 0%, #020612 100%);
+}
+
+.data-stream-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.data-stream-layer--far {
+  z-index: 2;
+}
+
+.data-stream-layer--mid {
+  z-index: 4;
+}
+
+.data-stream-layer--near {
+  z-index: 5;
+}
+
+.data-stream-particle {
+  position: absolute;
+  left: var(--left);
+  top: -40vh;
+  animation: dataStreamFall var(--duration) linear infinite;
+  animation-delay: calc(var(--delay) * -1);
+}
+
+/* Firefly micro-sparkle dots — cyan by default */
+.data-stream-trail {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: var(--opacity);
+  background: radial-gradient(circle, #00f2ff 0%, rgba(0, 242, 255, 0.35) 55%, transparent 70%);
+  box-shadow: 0 0 6px rgba(0, 242, 255, 0.75), 0 0 14px rgba(0, 242, 255, 0.3);
+  animation: fireflyBreathe calc(var(--duration) * 0.75) ease-in-out infinite;
+}
+
+/* Every 3rd particle → phantom purple */
+.data-stream-particle:nth-child(3n) .data-stream-trail {
+  background: radial-gradient(circle, #a855f7 0%, rgba(168, 85, 247, 0.35) 55%, transparent 70%);
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.75), 0 0 14px rgba(168, 85, 247, 0.3);
+}
+
+.data-stream-layer--far .data-stream-trail {
+  filter: blur(2px);
+  width: 3px;
+  height: 3px;
+}
+
+.data-stream-layer--mid .data-stream-trail {
+  filter: blur(1px);
+}
+
+.data-stream-layer--near .data-stream-trail {
+  filter: blur(0);
+  width: 5px;
+  height: 5px;
+  box-shadow: 0 0 9px rgba(0, 242, 255, 0.9), 0 0 22px rgba(0, 242, 255, 0.4);
+}
+
+.data-stream-layer--near .data-stream-particle:nth-child(3n) .data-stream-trail {
+  box-shadow: 0 0 9px rgba(168, 85, 247, 0.9), 0 0 22px rgba(168, 85, 247, 0.4);
+}
+
+/* ── 全局扫描线扫描带（从顶至底循环移动）───────────────────────────────────── */
+
+.crt-scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* Vertical scanlines removed per jewel-tone design */
+  opacity: 0;
+  z-index: 6;
+}
+
+.crt-noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.012;
+  background-image: radial-gradient(#fff 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+  z-index: 7;
+}
+
+/* ── 全屏颗粒噪点（几乎不可见的老式显示器质感）────────────────────────────── */
+.agent-noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.18) 0.7px, transparent 0.75px),
+    radial-gradient(rgba(255, 140, 0, 0.1) 0.7px, transparent 0.75px);
+  background-size: 3px 3px, 4px 4px;
+  background-position: 0 0, 1px 1px;
+  filter: contrast(120%);
+  animation: agentNoiseDrift 1.6s steps(2, end) infinite;
+}
+
+/* ── 毛玻璃面板（深海宝石统一规格）─────────────────────────────────────────── */
+.glass-panel {
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 242, 255, 0.2);
+}
+
+.card {
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 242, 255, 0.2);
+  box-shadow: 0 4px 24px rgba(0, 0, 30, 0.5);
+}
+
+.safe-bottom {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────────────── */
+
+/* 竖向扫描线水平漂移 */
+@keyframes scanDrift {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes dataStreamFall {
+  0% {
+    transform: translate3d(0, -22vh, 0);
+    opacity: 0;
+  }
+  10%,
+  82% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 142vh, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes dataStreamSway {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(var(--drift-a));
+  }
+  50% {
+    transform: translateX(var(--drift-b));
+  }
+  75% {
+    transform: translateX(var(--drift-c));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes agentNoiseDrift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(-1px, 1px, 0);
+  }
+  50% {
+    transform: translate3d(1px, -1px, 0);
+  }
+  75% {
+    transform: translate3d(-1px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes breathGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(0, 255, 157, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(0, 255, 157, 0.5);
+  }
+}
+
+@keyframes alignSweep {
+  0% {
+    transform: translateY(-28%);
+  }
+  100% {
+    transform: translateY(28%);
+  }
+}
+
+@keyframes pixelPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes fireflyBreathe {
+  0%,
+  100% {
+    transform: scale(0.65);
+    opacity: calc(var(--opacity, 1) * 0.45);
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: var(--opacity, 1);
+  }
+}
+
+@keyframes particleAscend {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
