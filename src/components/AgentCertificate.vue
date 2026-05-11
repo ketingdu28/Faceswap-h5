@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import certificateTemplate from '../assets/certificate-template.png'
+import certificateTemplate from '../assets/certificate-template.webp'
 
 const props = defineProps<{
   codename: string
@@ -86,12 +86,12 @@ watch(() => props.imageUrl, async (url) => {
  */
 .certificate-bg-image {
   position: absolute;
-  top: 29%;      /* ← 向下移动：数值越大越往下 */
+  top: 25%;         /* 拱形窗口顶部约在模板高度 25% 处 */
   left: 0;
-  width: 55%;
-  height: 55%;
-  object-fit: cover;         /* ← 填满背景，可改为 contain */
-  object-position: center top; /* ← 调整照片对准位置 */
+  width: 50%;       /* 拱形宽度约占模板宽度 50% */
+  height: 55%;      /* 拱形高度：25%→80%，共 55% */
+  object-fit: cover;
+  object-position: center top; /* 人脸对齐拱顶 */
   z-index: 1;
 }
 

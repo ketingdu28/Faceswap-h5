@@ -6,7 +6,7 @@ import AgentCertificate from '../components/AgentCertificate.vue'
 import { useAgentFlowStore } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
 import { FaceSwapServiceError } from '../services/errors'
-import certificateTemplate from '../assets/certificate-template.png'
+import certificateTemplate from '../assets/certificate-template.webp'
 
 const router = useRouter()
 const flow = useAgentFlowStore()
@@ -241,11 +241,11 @@ async function exportCertificate() {
     ctx.fillStyle = '#050c1d'
     ctx.fillRect(0, 0, W, H)
 
-    // 与 AgentCertificate.vue CSS 保持一致：top:29%, left:0, width:55%, height:55%
+    // 与 AgentCertificate.vue CSS 保持一致：top:25%, left:0, width:50%, height:55%
     // object-fit:cover, object-position:center top
     const destX = 0
-    const destY = H * 0.29
-    const destW = W * 0.55
+    const destY = H * 0.25
+    const destW = W * 0.50
     const destH = H * 0.55
 
     const imgAspect = photoImg.naturalWidth / photoImg.naturalHeight
