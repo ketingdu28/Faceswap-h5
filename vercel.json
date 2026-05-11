@@ -4,6 +4,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/jimeng-proxy/:path*",
+      "destination": "https://ark.cn-beijing.volces.com/:path*"
+    },
+    {
+      "source": "/piapi-proxy/:path*",
+      "destination": "https://api.piapi.ai/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
