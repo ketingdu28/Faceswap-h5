@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Camera, ImagePlus, Play } from 'lucide-vue-next'
 import StyleCard from '../components/StyleCard.vue'
@@ -176,6 +176,8 @@ async function startGeneration() {
 
   flow.resetResult()
   flow.setGenerating(true)
+  // 等 Vue 渲染 loading 界面后再启动网络请求，避免主线程同步操作冻结 UI
+  await nextTick()
   try {
     const { resultUrl, meta } = await faceSwapClient.generateFaceSwap({
       imageUrl: flow.sourceImageBase64,

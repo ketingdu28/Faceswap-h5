@@ -73,11 +73,10 @@ async function downloadResultImage() {
   }
 }
 
-function triggerCertificateDownload(dataUrl: string) {
-  const isJpeg = dataUrl.startsWith('data:image/jpeg')
-  const fileName = `xmeta-certificate-${Date.now()}.${isJpeg ? 'jpg' : 'png'}`
+function triggerCertificateDownload(url: string) {
+  const fileName = `xmeta-certificate-${Date.now()}.jpg`
   const link = document.createElement('a')
-  link.href = dataUrl
+  link.href = url
   link.download = fileName
   link.rel = 'noopener'
   link.style.display = 'none'
@@ -264,7 +263,15 @@ async function exportCertificate() {
     // 模板叠在照片上方（模板透明区域露出下方照片）
     ctx.drawImage(templateImg, 0, 0, W, H)
 
-    triggerCertificateDownload(canvas.toDataURL('image/jpeg', 0.92))
+    // toBlob 是异步的，不阻塞主线程（toDataURL 同步编码会冻结手机 UI 1-3 秒）
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    })
+    if (!blob) throw new Error('Canvas encoding failed')
+    const objectUrl = URL.createObjectURL(blob)
+    triggerCertificateDownload(objectUrl)
+    // 延迟释放，确保浏览器有足够时间启动下载
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000)
     exportMessage.value = zh.certDownloaded
   } catch (err) {
     console.error('[Export]', err)
