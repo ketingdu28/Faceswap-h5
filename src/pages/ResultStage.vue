@@ -74,7 +74,8 @@ async function downloadResultImage() {
 }
 
 function triggerCertificateDownload(dataUrl: string) {
-  const fileName = `xmeta-certificate-${Date.now()}.png`
+  const isJpeg = dataUrl.startsWith('data:image/jpeg')
+  const fileName = `xmeta-certificate-${Date.now()}.${isJpeg ? 'jpg' : 'png'}`
   const link = document.createElement('a')
   link.href = dataUrl
   link.download = fileName
@@ -170,23 +171,36 @@ function loadImg(src: string): Promise<HTMLImageElement> {
   })
 }
 
-async function toDataUrl(url: string): Promise<string> {
-  // 同样加时间戳绕过缓存
-  const fetchUrl = url.startsWith('data:') || url.startsWith('blob:')
-    ? url
-    : `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`
-  const res = await fetch(fetchUrl, {
-    mode: 'cors',
-    cache: 'no-store',
-    headers: { 'Cache-Control': 'no-cache' },
-  })
-  const blob = await res.blob()
+function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result as string)
     reader.onerror = reject
     reader.readAsDataURL(blob)
   })
+}
+
+async function toDataUrl(url: string): Promise<string> {
+  // data: / blob: 已在本地，直接返回
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url
+
+  // 先尝试直连（加时间戳绕过非 CORS 缓存）
+  const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`
+  try {
+    const res = await fetch(fetchUrl, {
+      mode: 'cors',
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await blobToDataUrl(await res.blob())
+  } catch {
+    // 直连 CORS 失败，通过 Vercel 服务端代理转换（/api/proxy-image）
+  }
+
+  const proxyRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`)
+  if (!proxyRes.ok) throw new Error(`proxy ${proxyRes.status}`)
+  return blobToDataUrl(await proxyRes.blob())
 }
 
 async function exportCertificate() {
@@ -223,6 +237,10 @@ async function exportCertificate() {
     const ctx = canvas.getContext('2d')!
     ctx.scale(SCALE, SCALE)
 
+    // 深色背景：防止 JPEG 导出时透明区域变黑块（与证书深色主题一致）
+    ctx.fillStyle = '#050c1d'
+    ctx.fillRect(0, 0, W, H)
+
     // 与 AgentCertificate.vue CSS 保持一致：top:29%, left:0, width:55%, height:55%
     // object-fit:cover, object-position:center top
     const destX = 0
@@ -246,7 +264,7 @@ async function exportCertificate() {
     // 模板叠在照片上方（模板透明区域露出下方照片）
     ctx.drawImage(templateImg, 0, 0, W, H)
 
-    triggerCertificateDownload(canvas.toDataURL('image/png'))
+    triggerCertificateDownload(canvas.toDataURL('image/jpeg', 0.92))
     exportMessage.value = zh.certDownloaded
   } catch (err) {
     console.error('[Export]', err)
@@ -402,6 +420,16 @@ onUnmounted(() => {
     radial-gradient(circle at 78% 18%, rgba(182, 122, 255, 0.08) 0%, rgba(182, 122, 255, 0) 24%),
     linear-gradient(135deg, rgba(9, 24, 48, 0.16) 0%, rgba(15, 52, 94, 0.14) 100%),
     url('/magic-bg.png') center center / cover no-repeat;
+}
+
+/* 移动端不加载装饰背景图，用渐变替代，节省带宽和合成开销 */
+@media (max-width: 768px) {
+  .result-stage-bg {
+    background:
+      radial-gradient(circle at top, rgba(255, 218, 170, 0.06) 0%, rgba(255, 218, 170, 0) 28%),
+      radial-gradient(circle at 78% 18%, rgba(182, 122, 255, 0.08) 0%, rgba(182, 122, 255, 0) 24%),
+      linear-gradient(135deg, #081225 0%, #020612 100%);
+  }
 }
 
 .glow-blob {
@@ -567,7 +595,7 @@ onUnmounted(() => {
     0 10px 30px rgba(8, 18, 48, 0.4),
     0 0 30px rgba(68, 217, 255, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
-  backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
   border: 0.5px solid rgba(214, 232, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.2);
   border-radius: 30px;
@@ -588,7 +616,7 @@ onUnmounted(() => {
 .loading-panel {
   border: none;
   background: linear-gradient(180deg, rgba(120, 177, 255, 0.12), rgba(88, 131, 228, 0.08));
-  backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
   border: 0.5px solid rgba(214, 232, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.2);
   box-shadow:
@@ -630,7 +658,7 @@ onUnmounted(() => {
     0 0 24px rgba(68, 217, 255, 0.18),
     0 0 28px rgba(201, 114, 255, 0.16),
     inset 0 0 14px rgba(255, 245, 220, 0.16);
-  backdrop-filter: blur(30px);
+  backdrop-filter: blur(10px);
   text-shadow: 0 0 10px rgba(255, 249, 240, 0.52);
   overflow: hidden;
   transition:

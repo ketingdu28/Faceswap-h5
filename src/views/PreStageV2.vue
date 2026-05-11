@@ -775,7 +775,7 @@ async function startGeneration() {
 .card-shell {
   position: relative;
   background: linear-gradient(180deg, rgba(108, 165, 255, 0.12), rgba(69, 109, 204, 0.08));
-  backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
   border: 0.5px solid rgba(205, 225, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.22);
   box-shadow:
@@ -816,7 +816,7 @@ async function startGeneration() {
   isolation: isolate;
   border: 2px solid transparent;
   background: linear-gradient(135deg, rgba(255, 245, 220, 0.18), rgba(190, 151, 255, 0.16));
-  backdrop-filter: blur(30px);
+  backdrop-filter: blur(10px);
   box-shadow:
     0 10px 24px rgba(8, 10, 30, 0.28),
     0 0 24px rgba(68, 217, 255, 0.2),

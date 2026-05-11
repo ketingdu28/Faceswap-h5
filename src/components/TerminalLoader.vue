@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
       class="terminal-loader"
       :class="{ 'is-exploding': exploding }"
     >
-      <img class="loader-bg-image" src="/magic-bg.png" alt="" loading="eager" fetchpriority="high" decoding="sync" />
+      <img class="loader-bg-image" src="/magic-bg.png" alt="" loading="lazy" decoding="async" />
       <div class="loader-bg-mask" />
       <div
         v-for="layer in particleLayers"
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
   width: min(88vw, 540px);
   border: none;
   background: linear-gradient(180deg, rgba(120, 177, 255, 0.16), rgba(88, 131, 228, 0.1));
-  backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
   border: 0.5px solid rgba(214, 232, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.2);
   box-shadow:

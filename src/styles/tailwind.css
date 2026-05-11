@@ -273,3 +273,42 @@ body,
     opacity: 0;
   }
 }
+
+/* ─── 移动端性能优化 ──────────────────────────────────────────────────────────
+ * 在低性能设备上：
+ *  1. 禁用纯装饰性动画（粒子、浮动气泡、CRT 噪点）
+ *  2. 去掉动态 filter: blur —— 移动 GPU 上每帧都要重新合成
+ *  3. 保留 transition（交互反馈）和 pose/canvas 相关动画
+ * ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* 全局粒子流 */
+  .data-stream-particle,
+  .data-stream-layer { display: none; }
+
+  /* 浮动气泡（ResultStage / PreStageV2 内均有） */
+  .bubble-dot { animation: none !important; }
+
+  /* 光晕 blob */
+  .glow-blob { animation: none !important; filter: none !important; }
+
+  /* CRT / agent 噪点叠层 */
+  .crt-noise, .agent-noise { display: none; }
+
+  /* 粒子上升层（ResultStage 证书区） */
+  .particle-ascension { display: none; }
+
+  /* PreStage 幽灵 / 装饰粒子 */
+  .spectral-ghost { display: none; }
+  .particle-stream-item { display: none; }
+}
+
+/* 尊重系统级"减少动画"偏好设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

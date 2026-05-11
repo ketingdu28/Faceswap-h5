@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
       class="swap-loader"
       :class="{ 'is-unlocking': isUnlocking }"
     >
-      <img class="loader-bg-image" src="/magic-bg.png" alt="" loading="eager" fetchpriority="high" decoding="sync" />
+      <img class="loader-bg-image" src="/magic-bg.png" alt="" loading="lazy" decoding="async" />
       <div class="loader-bg-mask" />
       <div class="swap-loader-nebula" />
       <div class="swap-loader-grid" />

@@ -57,7 +57,7 @@ const previewImageMap = {
     0 24px 40px -28px rgba(0, 0, 50, 0.42),
     0 0 24px rgba(68, 217, 255, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
-  backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
   border: 0.5px solid rgba(214, 232, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.2);
   border-radius: 30px;

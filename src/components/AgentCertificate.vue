@@ -66,7 +66,7 @@ watch(() => props.imageUrl, async (url) => {
     0 10px 30px rgba(8, 18, 48, 0.4),
     0 0 30px rgba(68, 217, 255, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
-  backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
 }
 
 /* 高度由模板图片原始比例撑开，不再用固定 aspect-ratio */

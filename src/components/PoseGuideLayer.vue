@@ -1635,8 +1635,8 @@ onBeforeUnmount(() => {
   width: min(92vw, 360px);
   max-width: calc(100vw - 20px);
   background: linear-gradient(180deg, rgba(108, 165, 255, 0.16), rgba(69, 109, 204, 0.12));
-  backdrop-filter: blur(45px) saturate(140%);
-  -webkit-backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 0.5px solid rgba(205, 225, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.22);
   box-shadow:
@@ -1765,8 +1765,8 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   border: 0.5px solid rgba(205, 225, 255, 0.22);
   background: linear-gradient(135deg, rgba(255, 245, 220, 0.18), rgba(190, 151, 255, 0.16));
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: rgba(255, 249, 240, 0.96);
   font-size: 22px;
   line-height: 1;
@@ -1833,8 +1833,8 @@ onBeforeUnmount(() => {
   gap: 10px;
   text-align: center;
   background: linear-gradient(180deg, rgba(108, 165, 255, 0.14), rgba(69, 109, 204, 0.10));
-  backdrop-filter: blur(45px) saturate(140%);
-  -webkit-backdrop-filter: blur(45px) saturate(140%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 0.5px solid rgba(205, 225, 255, 0.22);
   border-top: 0.5px solid rgba(255, 245, 220, 0.22);
   box-shadow:
@@ -1883,8 +1883,8 @@ onBeforeUnmount(() => {
   isolation: isolate;
   border: 0.5px solid rgba(205, 225, 255, 0.22);
   background: linear-gradient(135deg, rgba(255, 245, 220, 0.18), rgba(190, 151, 255, 0.16));
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: rgba(255, 249, 240, 0.96);
   font-size: 13px;
   letter-spacing: 0.12em;
