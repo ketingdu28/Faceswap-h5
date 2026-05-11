@@ -14,6 +14,8 @@ const localImageUrl = ref('')
 
 async function toDataUrl(url: string): Promise<string> {
   if (!url) return ''
+  // data: / blob: URL 已在本地，无需再 fetch（fetch data: 加 mode:'cors' 在部分浏览器会抛错）
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url
   try {
     const res = await fetch(url, { mode: 'cors' })
     const blob = await res.blob()
@@ -43,8 +45,8 @@ watch(() => props.imageUrl, async (url) => {
     data-certificate
   >
     <div class="certificate-stage overflow-visible">
-      <!-- AI 换脸图：crossOrigin 确保首次加载即携带 CORS 头，避免后续 canvas 导出时缓存冲突 -->
-      <img :src="localImageUrl || imageUrl" crossorigin="anonymous" alt="ai portrait" class="certificate-bg-image" />
+      <!-- AI 换脸图：不加 crossorigin，避免 CDN 无 CORS 头时图片完全无法显示；canvas 导出由 ResultStage 独立处理 -->
+      <img :src="localImageUrl || imageUrl" alt="ai portrait" class="certificate-bg-image" />
       <!-- 证书模板：叠在图片上方 -->
       <img
         :src="certificateTemplate"
