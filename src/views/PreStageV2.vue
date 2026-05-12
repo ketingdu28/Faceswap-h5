@@ -20,9 +20,9 @@ import sceneImgC from '../assets/style-c.png'
 // import templateA3 from '../assets/template-a-3.webp'
 //
 // 场景 B（魔法冰堡）模板 ← 取消下面三行注释并放入图片文件即可生效
-// import templateB1 from '../assets/template-b-1.webp'
-// import templateB2 from '../assets/template-b-2.webp'
-// import templateB3 from '../assets/template-b-3.webp'
+import templateB1 from '../assets/template-b-1.webp'
+import templateB2 from '../assets/template-b-2.webp'
+import templateB3 from '../assets/template-b-3.webp'
 //
 // 场景 C（冰龙寻珠）模板
 // import templateC1 from '../assets/template-c-1.webp'
@@ -93,7 +93,7 @@ const sceneImages: Record<StyleOption, string> = { A: sceneImgA, B: sceneImgB, C
 // 图片备好后：1) 取消上方注释中的 import  2) 填入下方对应位置
 const sceneTemplates: Partial<Record<StyleOption, [string | null, string | null, string | null]>> = {
   // A: [templateA1, templateA2, templateA3],
-  // B: [templateB1, templateB2, templateB3],  // ← 魔法冰堡，图片就绪后填这行
+   B: [templateB1, templateB2, templateB3],  // ← 魔法冰堡，图片就绪后填这行
   // C: [templateC1, templateC2, templateC3],
 }
 const selectedScene = computed(() => styles.find((s) => s.id === flow.selectedStyle) ?? null)
@@ -130,6 +130,14 @@ function selectTemplate(templateIdx: number) {
   if (!pendingScene.value) return
   flow.setStyle(pendingScene.value)
   selectedTemplateIdx.value = templateIdx
+
+  // 将模板图片构造为完整公网 URL，作为换脸底图传给 API
+  // bundled asset 路径（如 /assets/template-b-1-XXXX.webp）+ origin → 公网可访问
+  const templateImgPath = sceneTemplates[pendingScene.value]?.[templateIdx] ?? null
+  flow.setTemplateTargetUrl(
+    templateImgPath ? window.location.origin + templateImgPath : null
+  )
+
   sceneConfirmed.value = true
   sceneModalOpen.value = false
   sheetStep.value = 'scene'
@@ -255,6 +263,8 @@ async function startGeneration() {
     const { resultUrl, meta } = await faceSwapClient.generateFaceSwap({
       imageUrl: flow.sourceImageBase64,
       style: flow.selectedStyle,
+      // 使用用户选定的模板底图（未选时回退到 STYLE_TARGET_URLS 默认值）
+      targetImageUrl: flow.templateTargetUrl ?? undefined,
     })
     flow.setResultImage(resultUrl)
     flow.certificateMeta = meta

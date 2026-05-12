@@ -180,7 +180,8 @@ async function runGenerationIfNeeded() {
     const response = await faceSwapClient.generateFaceSwap({
       imageUrl: flow.sourceImageUrl,
       style: flow.selectedStyle,
-      cloudFileID: flow.cloudFileID,   // TCB mode: use PreStage uploaded fileID
+      cloudFileID: flow.cloudFileID,
+      targetImageUrl: flow.templateTargetUrl ?? undefined, // 用户选定的模板底图
       onProgress: (event) => {
         generationProgress.value = Math.max(8, Math.min(98, event.progress))
         if (event.detail) {

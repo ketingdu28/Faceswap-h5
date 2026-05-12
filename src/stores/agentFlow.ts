@@ -76,6 +76,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
   const certificateMeta = ref<CertificateMeta>(persisted?.certificateMeta ?? getDefaultMeta())
   /** 云存储 fileID，TCB 模式上传后写入，供 ResultStage 传给云函数 */
   const cloudFileID = ref<string | null>(persisted?.cloudFileID ?? null)
+  /** 用户选定的模板底图公网 URL（覆盖 STYLE_TARGET_URLS 默认值） */
+  const templateTargetUrl = ref<string | null>(null)
 
   const canGenerate = computed(() => Boolean(sourceImageUrl.value && selectedStyle.value))
 
@@ -102,11 +104,16 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     cloudFileID.value = id
   }
 
+  function setTemplateTargetUrl(url: string | null) {
+    templateTargetUrl.value = url
+  }
+
   function resetSourceImage() {
     sourceImageUrl.value = null
     sourceImageBase64.value = null
     cloudFileID.value = null
     resultImageUrl.value = null
+    templateTargetUrl.value = null
     isGenerating.value = false
   }
 
@@ -147,6 +154,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     setResultImage,
     setGenerating,
     setCloudFileID,
+    templateTargetUrl,
+    setTemplateTargetUrl,
     resetSourceImage,
     resetResult,
   }
