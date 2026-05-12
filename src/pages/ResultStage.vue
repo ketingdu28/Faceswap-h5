@@ -376,7 +376,7 @@ onUnmounted(() => {
             <div class="particle-ascension pointer-events-none absolute inset-x-0 bottom-0 h-full" />
             <div class="particle-ascension particle-ascension--b pointer-events-none absolute inset-x-0 bottom-0 h-full" />
             <button type="button" class="group relative z-10 block w-full" :disabled="isDownloading" @click="downloadResultImage">
-              <img :src="resultImage || ''" alt="AI result" class="w-full object-contain" style="max-height:70vh;min-height:300px;background:#0a1228;" />
+              <img :src="resultImage || ''" alt="AI result" class="w-full object-cover" style="max-height:70vh;min-height:300px;" />
               <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/0 transition-colors duration-200 group-hover:bg-black/35">
                 <Download class="h-8 w-8 text-white opacity-0 drop-shadow-lg transition-opacity duration-200 group-hover:opacity-100" />
                 <span class="font-mono text-xs tracking-wider text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
