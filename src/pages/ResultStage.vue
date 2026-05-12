@@ -103,8 +103,8 @@ const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
 // 预生成证书 blob：result 就绪后立即在后台合成，用户点下载时直接取用
 const cachedCertBlob = ref<Blob | null>(null)
 
-// 证书使用卡通头像，若尚未生成则回退换脸结果
-const certPhotoUrl = computed(() => flow.cartoonAvatarUrl ?? flow.resultImageUrl)
+// 证书只展示卡通头像，未生成时为 null（显示占位符，不回退换脸图）
+const certPhotoUrl = computed(() => flow.cartoonAvatarUrl)
 
 async function buildCertBlob(): Promise<Blob | null> {
   let photoSrc = certPhotoUrl.value
@@ -173,8 +173,13 @@ const visibleLogs = computed(() => {
 })
 
 async function runGenerationIfNeeded() {
-  // If result already exists, render it directly and avoid redirect loops.
-  if (flow.resultImageUrl) return
+  // 换脸结果已存在（sessionStorage 恢复）但卡通头像未生成时，补触发卡通生成
+  if (flow.resultImageUrl) {
+    if (!flow.cartoonAvatarUrl && flow.sourceImageUrl) {
+      generateCartoonForCertificate(flow.sourceImageUrl)
+    }
+    return
+  }
   if (!flow.sourceImageUrl) {
     errorHint.value = zh.uploadFirst
     return
@@ -418,7 +423,13 @@ onUnmounted(() => {
         v-if="!teaserMode"
         class="card-shell rounded-[30px] p-0 w-full"
       >
+        <!-- 卡通头像生成中时显示 loading 遮罩 -->
+        <div v-if="isReady && !certPhotoUrl" class="cartoon-loading">
+          <div class="cartoon-loading-orb"></div>
+          <p class="cartoon-loading-text">正在生成卡通头像...</p>
+        </div>
         <AgentCertificate
+          v-else
           :codename="flow.certificateMeta.codename"
           :code="flow.certificateMeta.code"
           :joined-date="flow.certificateMeta.joinedDate"
@@ -622,6 +633,35 @@ onUnmounted(() => {
 
 .section-heading--result {
   min-width: 220px;
+}
+
+/* 卡通头像生成中的 loading 占位 */
+.cartoon-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 16px;
+  border-radius: 30px;
+}
+.cartoon-loading-orb {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(68, 217, 255, 0.25);
+  border-top-color: rgba(68, 217, 255, 0.9);
+  animation: cartoonSpin 0.9s linear infinite;
+  will-change: transform;
+}
+.cartoon-loading-text {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: rgba(200, 230, 255, 0.7);
+}
+@keyframes cartoonSpin {
+  to { transform: rotate(360deg); }
 }
 
 /* Unified jewel-glass spec */
