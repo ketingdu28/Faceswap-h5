@@ -556,8 +556,8 @@ async function generateViaPiapi(input: GenerateFaceSwapInput): Promise<GenerateF
  *
  * 请求格式：
  *   POST /api/v3/images/generations
- *   image: [模板图URL, 用户人脸URL]  （两张图：保留姿势/服装的模板 + 待换入的脸）
- *   prompt: 换脸指令
+ *   image: [用户照片URL]   仅传用户照片，由提示词驱动风格转换
+ *   prompt: 卡通头像生成指令（可通过 VITE_JIMENG_PROMPT 覆盖）
  */
 async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<GenerateFaceSwapOutput> {
   const baseUrl = getEnvString('VITE_JIMENG_BASE_URL') || 'https://ark.cn-beijing.volces.com'
@@ -565,7 +565,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
   const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
   const prompt =
     getEnvString('VITE_JIMENG_PROMPT') ||
-    '极致高清，写实摄影，保持原图的发型、服装及背景环境与光效色彩完全不变，仅将面部特征替换为参考图中的人物，要求肤色融合自然，五官结构精准，表情生动'
+    '学习皮克斯感的 3D动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。图中人物面部装饰，发型以及发饰，服装，配饰、表情、姿势保持一致'
   const size = getEnvString('VITE_JIMENG_SIZE') || '1024x1024'
   const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
 
@@ -576,13 +576,12 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
     )
   }
 
-  // Step 1: 上传用户人脸至公网 CDN
-  input.onProgress?.({ stage: 'upload', progress: 10, detail: 'Uploading facial image to CDN...' })
-  const swapImageUrl = await uploadToImgBB(input.imageUrl)
-  const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
+  // Step 1: 上传用户照片至公网 CDN
+  input.onProgress?.({ stage: 'upload', progress: 10, detail: 'Uploading photo to CDN...' })
+  const userPhotoUrl = await uploadToImgBB(input.imageUrl)
 
-  // Step 2: 调用即梦接口（同步，image 传数组：[模板图, 人脸图]）
-  input.onProgress?.({ stage: 'submit', progress: 35, detail: 'Generating face swap via Jimeng...' })
+  // Step 2: 调用即梦接口（单图风格转换：用户照片 → 皮克斯卡通头像）
+  input.onProgress?.({ stage: 'submit', progress: 35, detail: 'Generating cartoon avatar via Jimeng...' })
 
   let response: Response
   try {
@@ -596,7 +595,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
         body: JSON.stringify({
           model,
           prompt,
-          image: [targetImageUrl, swapImageUrl],
+          image: [userPhotoUrl],   // 只传用户照片，不传模板底图
           size,
           output_format: 'png',
           watermark: false,
