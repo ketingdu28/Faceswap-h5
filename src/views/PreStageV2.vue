@@ -400,11 +400,17 @@ async function startGeneration() {
 
         <!-- 未选择：传送门触发按钮 -->
         <button v-if="!sceneConfirmed" type="button" class="portal-trigger" @click="openScenePicker">
+          <!-- 底图 -->
+          <img src="/portal-bg.webp" alt="" class="portal-bg-img" aria-hidden="true" />
+          <!-- 渐变遮罩，保证文字可读 -->
+          <div class="portal-bg-mask" aria-hidden="true"></div>
+          <!-- 动态光环 -->
           <div class="portal-rings" aria-hidden="true">
             <div class="portal-ring ring-1"></div>
             <div class="portal-ring ring-2"></div>
             <div class="portal-ring ring-3"></div>
           </div>
+          <!-- 文字内容 -->
           <div class="portal-core">
             <span class="portal-star">✦</span>
             <p class="portal-label">点击开启传送门</p>
@@ -1127,12 +1133,13 @@ async function startGeneration() {
 .portal-trigger {
   position: relative;
   width: 100%;
-  min-height: 120px;
+  aspect-ratio: 16 / 9;   /* 与原图比例一致 */
+  min-height: 180px;
   border-radius: 20px;
-  background: linear-gradient(135deg, rgba(40, 20, 90, 0.55), rgba(10, 30, 80, 0.65));
+  background: #0a1228;    /* 图片加载前的底色 */
   border: 1px solid rgba(160, 100, 255, 0.35);
   box-shadow:
-    0 0 24px rgba(120, 60, 255, 0.18),
+    0 0 28px rgba(80, 40, 200, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   overflow: hidden;
   cursor: pointer;
@@ -1143,6 +1150,27 @@ async function startGeneration() {
 }
 .portal-trigger:active {
   transform: scale(0.97);
+}
+
+/* 底图：铺满按钮 */
+.portal-bg-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+}
+
+/* 渐变遮罩：顶部透明 → 底部深色，保证文字与光环清晰可读 */
+.portal-bg-mask {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(20, 0, 60, 0.15) 0%, rgba(10, 5, 40, 0.45) 70%),
+    linear-gradient(to bottom, rgba(5, 10, 30, 0.1) 0%, rgba(5, 10, 40, 0.55) 100%);
+  pointer-events: none;
 }
 
 .portal-rings {
