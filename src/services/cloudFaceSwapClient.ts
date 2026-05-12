@@ -98,6 +98,37 @@ function resolveTargetUrl(input: GenerateFaceSwapInput): string {
   return input.targetImageUrl?.trim() || STYLE_TARGET_URLS[input.style]
 }
 
+/**
+ * 确保目标图片是公网可访问的 HTTPS URL。
+ * - 已是公网 HTTPS（非 localhost）→ 直接返回
+ * - localhost / 相对路径 → 从浏览器 fetch 后上传 ImgBB，结果缓存到 sessionStorage
+ */
+async function ensurePublicTargetUrl(url: string): Promise<string> {
+  if (!url) return url
+  const isPublic = /^https:\/\//i.test(url) && !url.includes('localhost') && !url.includes('127.0.0.1')
+  if (isPublic) return url
+
+  // 用 URL 的后半段作 cache key（去掉哈希等不稳定字符）
+  const cacheKey = `xm_target_${url.replace(/[^a-zA-Z0-9]/g, '_').slice(-50)}`
+  try {
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) return cached
+  } catch { /* ignore */ }
+
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`无法获取模板图片：HTTP ${res.status}`)
+  const blob = await res.blob()
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+  const publicUrl = await uploadToImgBB(base64)
+  try { sessionStorage.setItem(cacheKey, publicUrl) } catch { /* ignore */ }
+  return publicUrl
+}
+
 function getEnvNumber(key: string, fallback: number): number {
   return Number((import.meta.env as Record<string, string | undefined>)[key] ?? fallback)
 }
@@ -192,7 +223,7 @@ async function generateViaBackend(input: GenerateFaceSwapInput): Promise<Generat
   // Step 1: 上传用户图片至公网，获取 ImgBB URL（与小程序 uploadToPublic 等价）
   input.onProgress?.({ stage: 'upload', progress: 8, detail: 'Uploading facial image to public CDN...' })
   const swapImageUrl = await uploadToImgBB(input.imageUrl)
-  const targetImageUrl = resolveTargetUrl(input)
+  const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   input.onProgress?.({ stage: 'submit', progress: 20, detail: 'Submitting face-swap task to backend...' })
 
@@ -282,7 +313,7 @@ async function generateViaInvoker(input: GenerateFaceSwapInput): Promise<Generat
   // Step 1: 上传用户图片至公网（小程序在客户端完成，H5 同样在调用云函数前完成）
   input.onProgress?.({ stage: 'upload', progress: 8, detail: 'Uploading facial image to public CDN...' })
   const swapImageUrl = await uploadToImgBB(input.imageUrl)
-  const targetImageUrl = resolveTargetUrl(input)
+  const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   // Step 2: 提交任务，含重试
   input.onProgress?.({ stage: 'submit', progress: 20, detail: 'Submitting task via cloud bridge...' })
@@ -419,7 +450,7 @@ async function generateViaPiapi(input: GenerateFaceSwapInput): Promise<GenerateF
   // Step 1: 上传用户图片至公网
   input.onProgress?.({ stage: 'upload', progress: 8, detail: 'Uploading facial image to public CDN...' })
   const swapImageUrl = await uploadToImgBB(input.imageUrl)
-  const targetImageUrl = resolveTargetUrl(input)
+  const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   // Step 2: 向 PiAPI 提交 face-swap 任务（与云函数 submit() 逻辑相同）
   input.onProgress?.({ stage: 'submit', progress: 20, detail: 'Submitting PiAPI face-swap task...' })
@@ -548,7 +579,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
   // Step 1: 上传用户人脸至公网 CDN
   input.onProgress?.({ stage: 'upload', progress: 10, detail: 'Uploading facial image to CDN...' })
   const swapImageUrl = await uploadToImgBB(input.imageUrl)
-  const targetImageUrl = resolveTargetUrl(input)
+  const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   // Step 2: 调用即梦接口（同步，image 传数组：[模板图, 人脸图]）
   input.onProgress?.({ stage: 'submit', progress: 35, detail: 'Generating face swap via Jimeng...' })
