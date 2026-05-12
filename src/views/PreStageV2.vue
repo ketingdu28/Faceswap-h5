@@ -71,13 +71,42 @@ const sceneModalOpen = ref(false)
 const sceneImages: Record<StyleOption, string> = { A: sceneImgA, B: sceneImgB, C: sceneImgC }
 const selectedScene = computed(() => styles.find((s) => s.id === flow.selectedStyle) ?? null)
 
+// 两步流程：step1 选场景 → step2 选模板
+const sheetStep = ref<'scene' | 'template'>('scene')
+const pendingScene = ref<StyleOption | null>(null)
+const selectedTemplateIdx = ref<number>(0)
+
+// 每个场景 3 个模板占位（后续替换为实际图片数组）
+const TEMPLATE_COUNT = 3
+
 // 要求照片 + 场景均已就绪
 const canStart = computed(() => flow.canGenerate && sceneConfirmed.value && !flow.isGenerating)
 
-function selectScene(id: StyleOption) {
-  flow.setStyle(id)
+function openScenePicker() {
+  sheetStep.value = 'scene'
+  sceneModalOpen.value = true
+}
+
+function closeSceneModal() {
+  sceneModalOpen.value = false
+  // 若用户未完成两步直接关闭，不改动已选状态
+  sheetStep.value = 'scene'
+  pendingScene.value = null
+}
+
+function onSceneCardClick(id: StyleOption) {
+  pendingScene.value = id
+  sheetStep.value = 'template'
+}
+
+function selectTemplate(templateIdx: number) {
+  if (!pendingScene.value) return
+  flow.setStyle(pendingScene.value)
+  selectedTemplateIdx.value = templateIdx
   sceneConfirmed.value = true
   sceneModalOpen.value = false
+  sheetStep.value = 'scene'
+  pendingScene.value = null
 }
 const previewLoadingMode = computed(() => route.query.previewLoading === '1')
 const floatingBubbles = Array.from({ length: 22 }, (_, index) => ({
@@ -364,13 +393,13 @@ async function startGeneration() {
               <p class="section-heading__title">{{ zh.styleMatrix }}</p>
               <p class="section-heading__eyebrow">Scene Portal</p>
             </div>
-            <p class="section-heading__subline">选择你的奇幻世界入口</p>
+            <p class="section-heading__subline">选择场景与换脸模板</p>
           </div>
           <span class="section-heading__badge">Portal</span>
         </div>
 
         <!-- 未选择：传送门触发按钮 -->
-        <button v-if="!sceneConfirmed" type="button" class="portal-trigger" @click="sceneModalOpen = true">
+        <button v-if="!sceneConfirmed" type="button" class="portal-trigger" @click="openScenePicker">
           <div class="portal-rings" aria-hidden="true">
             <div class="portal-ring ring-1"></div>
             <div class="portal-ring ring-2"></div>
@@ -379,48 +408,79 @@ async function startGeneration() {
           <div class="portal-core">
             <span class="portal-star">✦</span>
             <p class="portal-label">点击开启传送门</p>
-            <p class="portal-hint">选择你的游戏场景</p>
+            <p class="portal-hint">选择游戏场景与角色模板</p>
           </div>
         </button>
 
-        <!-- 已选择：场景已选择状态 -->
+        <!-- 已选择：场景 + 模板已确认 -->
         <div v-else class="portal-confirmed">
           <img :src="sceneImages[flow.selectedStyle]" alt="scene preview" class="portal-confirmed-thumb" />
           <div class="portal-confirmed-body">
             <span class="portal-confirmed-badge">✦ 场景已选择</span>
             <p class="portal-confirmed-name">{{ selectedScene?.title }}</p>
-            <p class="portal-confirmed-desc">{{ selectedScene?.description }}</p>
+            <p class="portal-confirmed-sub">模板 {{ ['一','二','三'][selectedTemplateIdx] }}</p>
           </div>
-          <button type="button" class="portal-reselect" @click="sceneModalOpen = true">重选</button>
+          <button type="button" class="portal-reselect" @click="openScenePicker">重选</button>
         </div>
       </div>
 
-      <!-- 场景选择底部弹层 -->
+      <!-- 两步选择底部弹层 -->
       <Teleport to="body">
         <Transition name="scene-sheet">
-          <div v-if="sceneModalOpen" class="scene-overlay" @click.self="sceneModalOpen = false">
-            <div class="scene-panel" role="dialog" aria-label="选择游戏场景">
-              <div class="scene-panel-header">
-                <p class="scene-panel-title">选择游戏场景</p>
-                <button type="button" class="scene-panel-close" aria-label="关闭" @click="sceneModalOpen = false">×</button>
-              </div>
-              <div class="scene-list">
-                <button
-                  v-for="s in styles"
-                  :key="s.id"
-                  type="button"
-                  class="scene-item"
-                  :class="{ 'is-active': sceneConfirmed && flow.selectedStyle === s.id }"
-                  @click="selectScene(s.id)"
-                >
-                  <img :src="sceneImages[s.id]" :alt="s.title" class="scene-item-img" />
-                  <div class="scene-item-body">
-                    <p class="scene-item-title">{{ s.title }}</p>
-                    <p class="scene-item-desc">{{ s.description }}</p>
-                  </div>
-                  <span v-if="sceneConfirmed && flow.selectedStyle === s.id" class="scene-item-check" aria-hidden="true">✓</span>
-                </button>
-              </div>
+          <div v-if="sceneModalOpen" class="scene-overlay" @click.self="closeSceneModal">
+            <div class="scene-panel" role="dialog" :aria-label="sheetStep === 'scene' ? '选择游戏场景' : '选择角色模板'">
+
+              <!-- Step 1：选场景 -->
+              <template v-if="sheetStep === 'scene'">
+                <div class="scene-panel-header">
+                  <p class="scene-panel-title">选择游戏场景</p>
+                  <button type="button" class="scene-panel-close" aria-label="关闭" @click="closeSceneModal">×</button>
+                </div>
+                <div class="scene-list">
+                  <button
+                    v-for="s in styles"
+                    :key="s.id"
+                    type="button"
+                    class="scene-item"
+                    :class="{ 'is-active': sceneConfirmed && flow.selectedStyle === s.id }"
+                    @click="onSceneCardClick(s.id)"
+                  >
+                    <img :src="sceneImages[s.id]" :alt="s.title" class="scene-item-img" />
+                    <div class="scene-item-body">
+                      <p class="scene-item-title">{{ s.title }}</p>
+                      <p class="scene-item-desc">{{ s.description }}</p>
+                    </div>
+                    <span v-if="sceneConfirmed && flow.selectedStyle === s.id" class="scene-item-check" aria-hidden="true">✓</span>
+                  </button>
+                </div>
+              </template>
+
+              <!-- Step 2：选模板 -->
+              <template v-else>
+                <div class="scene-panel-header">
+                  <button type="button" class="scene-panel-back" aria-label="返回" @click="sheetStep = 'scene'">‹ 返回</button>
+                  <p class="scene-panel-title">选择角色模板</p>
+                  <button type="button" class="scene-panel-close" aria-label="关闭" @click="closeSceneModal">×</button>
+                </div>
+                <p class="template-step-hint">{{ styles.find(s => s.id === pendingScene)?.title }} · 选择换脸模板</p>
+                <div class="template-grid">
+                  <button
+                    v-for="idx in TEMPLATE_COUNT"
+                    :key="idx"
+                    type="button"
+                    class="template-item"
+                    :class="{ 'is-active': sceneConfirmed && flow.selectedStyle === pendingScene && selectedTemplateIdx === idx - 1 }"
+                    @click="selectTemplate(idx - 1)"
+                  >
+                    <!-- 白色遮罩占位，后续替换为实际模板图片 -->
+                    <div class="template-placeholder" aria-hidden="true">
+                      <span class="template-placeholder-icon">＋</span>
+                    </div>
+                    <p class="template-label">模板 {{ ['一','二','三'][idx - 1] }}</p>
+                  </button>
+                </div>
+              </template>
+
             </div>
           </div>
         </Transition>
@@ -1312,6 +1372,78 @@ async function startGeneration() {
   align-items: center;
   justify-content: center;
   box-shadow: 0 0 10px rgba(180, 100, 255, 0.5);
+}
+
+/* ─── 已选确认：副标题（模板序号）────────────────────────────────────────────── */
+.portal-confirmed-sub {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(180, 160, 255, 0.75);
+  letter-spacing: 0.06em;
+}
+
+/* ─── 弹层 Step2：模板选择 ───────────────────────────────────────────────────── */
+.scene-panel-back {
+  font-size: 14px;
+  color: rgba(180, 160, 255, 0.85);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.template-step-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: rgba(200, 200, 255, 0.55);
+  letter-spacing: 0.06em;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.template-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid rgba(160, 100, 255, 0.18);
+  border-radius: 16px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 200ms ease, background 200ms ease;
+}
+.template-item.is-active {
+  border-color: rgba(200, 150, 255, 0.65);
+  background: rgba(160, 80, 255, 0.12);
+}
+.template-item:active { background: rgba(160, 100, 255, 0.2); }
+
+/* 白色遮罩占位图 — 替换时将此 div 换为 <img> 即可 */
+.template-placeholder {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.template-placeholder-icon {
+  font-size: 24px;
+  color: rgba(160, 140, 200, 0.5);
+}
+
+.template-label {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(210, 200, 255, 0.75);
+  letter-spacing: 0.04em;
 }
 
 /* ─── 底部面板入场/离场动画 ──────────────────────────────────────────────────── */
