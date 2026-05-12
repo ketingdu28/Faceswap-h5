@@ -103,9 +103,14 @@ const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
 const cachedCertBlob = ref<Blob | null>(null)
 
 async function buildCertBlob(): Promise<Blob | null> {
-  const photoSrc = flow.resultImageUrl
+  let photoSrc = flow.resultImageUrl
   if (!photoSrc) return null
   try {
+    // 先确保照片是 data: URL，否则 loadImg 的 crossOrigin='anonymous'
+    // 遇到无 CORS 头的 CDN 会直接失败（同 exportCertificate 旧逻辑）
+    if (!photoSrc.startsWith('data:') && !photoSrc.startsWith('blob:')) {
+      photoSrc = await toDataUrl(photoSrc) // 直连 CORS 或走 /api/proxy-image
+    }
     const [templateImg, photoImg] = await Promise.all([
       loadImg(certificateTemplate),
       loadImg(photoSrc),
@@ -142,9 +147,18 @@ async function buildCertBlob(): Promise<Blob | null> {
   }
 }
 
-// result 就绪后静默预生成，不影响 UI
+// result 就绪后静默预生成，不影响 UI；失败则 3 秒后自动重试一次（代理可能需要冷启动）
 watch(isReady, (ready) => {
-  if (ready) buildCertBlob().then((blob) => { cachedCertBlob.value = blob })
+  if (!ready) return
+  buildCertBlob().then((blob) => {
+    if (blob) {
+      cachedCertBlob.value = blob
+    } else {
+      setTimeout(() => {
+        buildCertBlob().then((b) => { if (b) cachedCertBlob.value = b })
+      }, 3000)
+    }
+  })
 })
 const visibleLogs = computed(() => {
   const start = currentLogOffset.value
