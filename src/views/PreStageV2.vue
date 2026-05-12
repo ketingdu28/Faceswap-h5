@@ -400,8 +400,8 @@ async function startGeneration() {
 
         <!-- 未选择：传送门触发按钮 -->
         <button v-if="!sceneConfirmed" type="button" class="portal-trigger" @click="openScenePicker">
-          <!-- 底图 -->
-          <img src="/portal-bg.webp" alt="" class="portal-bg-img" aria-hidden="true" />
+          <!-- 底图：:src 动态绑定绕过 Vite 构建期静态文件检查，运行时从 public/ 加载 -->
+          <img :src="'/portal-bg.webp'" alt="" class="portal-bg-img" aria-hidden="true" />
           <!-- 渐变遮罩，保证文字可读 -->
           <div class="portal-bg-mask" aria-hidden="true"></div>
           <!-- 动态光环 -->
