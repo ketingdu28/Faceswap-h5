@@ -2,11 +2,13 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Camera, ImagePlus, Play } from 'lucide-vue-next'
-import StyleCard from '../components/StyleCard.vue'
 import TerminalLoader from '../components/TerminalLoader.vue'
 import FaceSwapProcessLoader from '../components/FaceSwapProcessLoader.vue'
 import { useAgentFlowStore, type StyleOption } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
+import sceneImgA from '../assets/style-a.png'
+import sceneImgB from '../assets/style-b.png'
+import sceneImgC from '../assets/style-c.png'
 
 const PoseGuideLayer = defineAsyncComponent(() => import('../components/PoseGuideLayer.vue'))
 
@@ -62,7 +64,21 @@ const styles: Array<{ id: StyleOption; title: string; description: string }> = [
 const teaserMode = (import.meta.env.VITE_APP_MODE ?? 'FULL') === 'TEASER'
 const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
 const uploadPreview = computed(() => flow.sourceImageUrl)
-const canStart = computed(() => flow.canGenerate && !flow.isGenerating)
+
+// 场景选择状态：用户必须主动点击传送门并选择后才允许开始换脸
+const sceneConfirmed = ref(false)
+const sceneModalOpen = ref(false)
+const sceneImages: Record<StyleOption, string> = { A: sceneImgA, B: sceneImgB, C: sceneImgC }
+const selectedScene = computed(() => styles.find((s) => s.id === flow.selectedStyle) ?? null)
+
+// 要求照片 + 场景均已就绪
+const canStart = computed(() => flow.canGenerate && sceneConfirmed.value && !flow.isGenerating)
+
+function selectScene(id: StyleOption) {
+  flow.setStyle(id)
+  sceneConfirmed.value = true
+  sceneModalOpen.value = false
+}
 const previewLoadingMode = computed(() => route.query.previewLoading === '1')
 const floatingBubbles = Array.from({ length: 22 }, (_, index) => ({
   id: index,
@@ -98,6 +114,7 @@ onMounted(() => {
     return
   }
   flow.resetSourceImage()
+  sceneConfirmed.value = false
 })
 
 onBeforeUnmount(() => {
@@ -339,26 +356,75 @@ async function startGeneration() {
         />
       </div>
 
+      <!-- 传送门场景选择 -->
       <div class="card-shell rounded-[30px] p-3">
-        <div class="section-heading section-heading--index mb-2">
-          <div class="section-heading__row">
-            <p class="section-heading__title">{{ zh.styleMatrix }}</p>
-            <p class="section-heading__eyebrow">Fantasy Index</p>
+        <div class="mb-3 flex items-center justify-between">
+          <div class="section-heading section-heading--index">
+            <div class="section-heading__row">
+              <p class="section-heading__title">{{ zh.styleMatrix }}</p>
+              <p class="section-heading__eyebrow">Scene Portal</p>
+            </div>
+            <p class="section-heading__subline">选择你的奇幻世界入口</p>
           </div>
-          <p class="section-heading__subline">挑选一扇属于你的奇幻时空门</p>
+          <span class="section-heading__badge">Portal</span>
         </div>
-        <div class="grid grid-cols-3 gap-2">
-          <StyleCard
-            v-for="style in styles"
-            :key="style.id"
-            :style-id="style.id"
-            :title="style.title"
-            :description="style.description"
-            :active="flow.selectedStyle === style.id"
-            @click="flow.setStyle(style.id)"
-          />
+
+        <!-- 未选择：传送门触发按钮 -->
+        <button v-if="!sceneConfirmed" type="button" class="portal-trigger" @click="sceneModalOpen = true">
+          <div class="portal-rings" aria-hidden="true">
+            <div class="portal-ring ring-1"></div>
+            <div class="portal-ring ring-2"></div>
+            <div class="portal-ring ring-3"></div>
+          </div>
+          <div class="portal-core">
+            <span class="portal-star">✦</span>
+            <p class="portal-label">点击开启传送门</p>
+            <p class="portal-hint">选择你的游戏场景</p>
+          </div>
+        </button>
+
+        <!-- 已选择：场景已选择状态 -->
+        <div v-else class="portal-confirmed">
+          <img :src="sceneImages[flow.selectedStyle]" alt="scene preview" class="portal-confirmed-thumb" />
+          <div class="portal-confirmed-body">
+            <span class="portal-confirmed-badge">✦ 场景已选择</span>
+            <p class="portal-confirmed-name">{{ selectedScene?.title }}</p>
+            <p class="portal-confirmed-desc">{{ selectedScene?.description }}</p>
+          </div>
+          <button type="button" class="portal-reselect" @click="sceneModalOpen = true">重选</button>
         </div>
       </div>
+
+      <!-- 场景选择底部弹层 -->
+      <Teleport to="body">
+        <Transition name="scene-sheet">
+          <div v-if="sceneModalOpen" class="scene-overlay" @click.self="sceneModalOpen = false">
+            <div class="scene-panel" role="dialog" aria-label="选择游戏场景">
+              <div class="scene-panel-header">
+                <p class="scene-panel-title">选择游戏场景</p>
+                <button type="button" class="scene-panel-close" aria-label="关闭" @click="sceneModalOpen = false">×</button>
+              </div>
+              <div class="scene-list">
+                <button
+                  v-for="s in styles"
+                  :key="s.id"
+                  type="button"
+                  class="scene-item"
+                  :class="{ 'is-active': sceneConfirmed && flow.selectedStyle === s.id }"
+                  @click="selectScene(s.id)"
+                >
+                  <img :src="sceneImages[s.id]" :alt="s.title" class="scene-item-img" />
+                  <div class="scene-item-body">
+                    <p class="scene-item-title">{{ s.title }}</p>
+                    <p class="scene-item-desc">{{ s.description }}</p>
+                  </div>
+                  <span v-if="sceneConfirmed && flow.selectedStyle === s.id" class="scene-item-check" aria-hidden="true">✓</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <div class="card-shell mt-auto rounded-[30px] p-3">
         <button
@@ -997,4 +1063,272 @@ async function startGeneration() {
   }
 }
 
+/* ─── 传送门触发按钮 ────────────────────────────────────────────────────────── */
+.portal-trigger {
+  position: relative;
+  width: 100%;
+  min-height: 120px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(40, 20, 90, 0.55), rgba(10, 30, 80, 0.65));
+  border: 1px solid rgba(160, 100, 255, 0.35);
+  box-shadow:
+    0 0 24px rgba(120, 60, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 280ms cubic-bezier(0.22, 1.25, 0.3, 1), box-shadow 280ms ease;
+}
+.portal-trigger:active {
+  transform: scale(0.97);
+}
+
+.portal-rings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.portal-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(160, 100, 255, 0.4);
+  animation: portalPulse 2.8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+.ring-1 { width: 70px;  height: 70px;  animation-delay: 0s; }
+.ring-2 { width: 110px; height: 110px; animation-delay: 0.55s; border-color: rgba(68, 217, 255, 0.28); }
+.ring-3 { width: 150px; height: 150px; animation-delay: 1.1s; border-color: rgba(255, 138, 214, 0.2); }
+
+.portal-core {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.portal-star {
+  font-size: 22px;
+  color: rgba(220, 180, 255, 0.95);
+  text-shadow: 0 0 14px rgba(180, 100, 255, 0.7), 0 0 28px rgba(68, 217, 255, 0.4);
+  animation: starSpin 6s linear infinite;
+  display: block;
+  will-change: transform;
+}
+.portal-label {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(240, 225, 255, 0.96);
+  text-shadow: 0 0 12px rgba(180, 100, 255, 0.5);
+}
+.portal-hint {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgba(200, 220, 255, 0.65);
+}
+
+@keyframes portalPulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);   opacity: 0.7; }
+  50%       { transform: translate(-50%, -50%) scale(1.18); opacity: 0.25; }
+}
+@keyframes starSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ─── 场景已选择状态 ─────────────────────────────────────────────────────────── */
+.portal-confirmed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(40, 20, 90, 0.4), rgba(10, 30, 80, 0.5));
+  border: 1px solid rgba(160, 100, 255, 0.3);
+}
+.portal-confirmed-thumb {
+  width: 72px;
+  height: 90px;
+  border-radius: 12px;
+  object-fit: cover;
+  object-position: center top;
+  flex-shrink: 0;
+  border: 1px solid rgba(180, 120, 255, 0.3);
+}
+.portal-confirmed-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.portal-confirmed-badge {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 231, 160, 0.9);
+  text-shadow: 0 0 8px rgba(255, 200, 80, 0.4);
+}
+.portal-confirmed-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(240, 225, 255, 0.98);
+  text-shadow: 0 0 10px rgba(180, 100, 255, 0.4);
+}
+.portal-confirmed-desc {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(200, 210, 255, 0.65);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.portal-reselect {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(160, 100, 255, 0.18);
+  border: 1px solid rgba(160, 100, 255, 0.3);
+  color: rgba(220, 200, 255, 0.9);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+.portal-reselect:active { background: rgba(160, 100, 255, 0.32); }
+
+/* ─── 场景选择底层蒙版 + 底部面板 ────────────────────────────────────────────── */
+.scene-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(4, 10, 28, 0.72);
+  display: flex;
+  align-items: flex-end;
+}
+.scene-panel {
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 28px 28px 0 0;
+  background: linear-gradient(180deg, rgba(18, 10, 50, 0.98), rgba(8, 20, 55, 0.98));
+  border-top: 1px solid rgba(160, 100, 255, 0.3);
+  box-shadow: 0 -8px 40px rgba(80, 30, 180, 0.25);
+  padding: 20px 16px 32px;
+  -webkit-overflow-scrolling: touch;
+}
+.scene-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.scene-panel-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(240, 225, 255, 0.96);
+  text-shadow: 0 0 14px rgba(180, 100, 255, 0.4);
+}
+.scene-panel-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(200, 200, 255, 0.15);
+  color: rgba(220, 210, 255, 0.8);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.scene-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(160, 100, 255, 0.18);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 200ms ease, background 200ms ease;
+  position: relative;
+}
+.scene-item.is-active {
+  border-color: rgba(200, 150, 255, 0.6);
+  background: rgba(160, 80, 255, 0.12);
+}
+.scene-item:active { background: rgba(160, 100, 255, 0.18); }
+
+.scene-item-img {
+  width: 72px;
+  height: 90px;
+  border-radius: 12px;
+  object-fit: cover;
+  object-position: center top;
+  flex-shrink: 0;
+}
+.scene-item-body { flex: 1; min-width: 0; }
+.scene-item-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(240, 225, 255, 0.96);
+}
+.scene-item-desc {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(200, 210, 255, 0.65);
+  line-height: 1.5;
+}
+.scene-item-check {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(180, 100, 255, 0.8);
+  color: #fff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 10px rgba(180, 100, 255, 0.5);
+}
+
+/* ─── 底部面板入场/离场动画 ──────────────────────────────────────────────────── */
+.scene-sheet-enter-active,
+.scene-sheet-leave-active {
+  transition: opacity 240ms ease;
+}
+.scene-sheet-enter-active .scene-panel,
+.scene-sheet-leave-active .scene-panel {
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.scene-sheet-enter-from,
+.scene-sheet-leave-to {
+  opacity: 0;
+}
+.scene-sheet-enter-from .scene-panel,
+.scene-sheet-leave-to .scene-panel {
+  transform: translateY(100%);
+}
 </style>
