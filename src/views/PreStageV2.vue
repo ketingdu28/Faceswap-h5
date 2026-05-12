@@ -10,6 +10,25 @@ import sceneImgA from '../assets/style-a.png'
 import sceneImgB from '../assets/style-b.png'
 import sceneImgC from '../assets/style-c.png'
 
+// ─── 每个场景的换脸模板图片 ─────────────────────────────────────────────────────
+// 使用方法：将图片放到 src/assets/，在下方对应场景数组里填写 import 即可。
+// 未配置的场景会显示白色占位框，等待后续补充。
+//
+// 场景 A（风起洛阳）模板
+// import templateA1 from '../assets/template-a-1.webp'
+// import templateA2 from '../assets/template-a-2.webp'
+// import templateA3 from '../assets/template-a-3.webp'
+//
+// 场景 B（魔法冰堡）模板 ← 取消下面三行注释并放入图片文件即可生效
+// import templateB1 from '../assets/template-b-1.webp'
+// import templateB2 from '../assets/template-b-2.webp'
+// import templateB3 from '../assets/template-b-3.webp'
+//
+// 场景 C（冰龙寻珠）模板
+// import templateC1 from '../assets/template-c-1.webp'
+// import templateC2 from '../assets/template-c-2.webp'
+// import templateC3 from '../assets/template-c-3.webp'
+
 const PoseGuideLayer = defineAsyncComponent(() => import('../components/PoseGuideLayer.vue'))
 
 const router = useRouter()
@@ -69,6 +88,14 @@ const uploadPreview = computed(() => flow.sourceImageUrl)
 const sceneConfirmed = ref(false)
 const sceneModalOpen = ref(false)
 const sceneImages: Record<StyleOption, string> = { A: sceneImgA, B: sceneImgB, C: sceneImgC }
+
+// 每个场景的 3 张换脸模板，null 表示显示白色占位框
+// 图片备好后：1) 取消上方注释中的 import  2) 填入下方对应位置
+const sceneTemplates: Partial<Record<StyleOption, [string | null, string | null, string | null]>> = {
+  // A: [templateA1, templateA2, templateA3],
+  // B: [templateB1, templateB2, templateB3],  // ← 魔法冰堡，图片就绪后填这行
+  // C: [templateC1, templateC2, templateC3],
+}
 const selectedScene = computed(() => styles.find((s) => s.id === flow.selectedStyle) ?? null)
 
 // 两步流程：step1 选场景 → step2 选模板
@@ -478,8 +505,14 @@ async function startGeneration() {
                     :class="{ 'is-active': sceneConfirmed && flow.selectedStyle === pendingScene && selectedTemplateIdx === idx - 1 }"
                     @click="selectTemplate(idx - 1)"
                   >
-                    <!-- 白色遮罩占位，后续替换为实际模板图片 -->
-                    <div class="template-placeholder" aria-hidden="true">
+                    <!-- 有图片时显示图片，否则显示白色占位框 -->
+                    <img
+                      v-if="sceneTemplates[pendingScene ?? 'A']?.[idx - 1]"
+                      :src="sceneTemplates[pendingScene ?? 'A']![idx - 1]!"
+                      class="template-img"
+                      :alt="`模板 ${['一','二','三'][idx - 1]}`"
+                    />
+                    <div v-else class="template-placeholder" aria-hidden="true">
                       <span class="template-placeholder-icon">＋</span>
                     </div>
                     <p class="template-label">模板 {{ ['一','二','三'][idx - 1] }}</p>
@@ -1453,6 +1486,16 @@ async function startGeneration() {
 .template-item:active { background: rgba(160, 100, 255, 0.2); }
 
 /* 白色遮罩占位图 — 替换时将此 div 换为 <img> 即可 */
+/* 实际模板图片（替换占位后生效） */
+.template-img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+
 .template-placeholder {
   width: 100%;
   aspect-ratio: 3 / 4;
