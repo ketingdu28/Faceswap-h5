@@ -78,6 +78,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
   const cloudFileID = ref<string | null>(persisted?.cloudFileID ?? null)
   /** 用户选定的模板底图公网 URL（覆盖 STYLE_TARGET_URLS 默认值） */
   const templateTargetUrl = ref<string | null>(null)
+  /** 皮克斯卡通头像 URL（独立于换脸结果，用于证书展示） */
+  const cartoonAvatarUrl = ref<string | null>(null)
 
   const canGenerate = computed(() => Boolean(sourceImageUrl.value && selectedStyle.value))
 
@@ -108,12 +110,17 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     templateTargetUrl.value = url
   }
 
+  function setCartoonAvatar(url: string | null) {
+    cartoonAvatarUrl.value = url
+  }
+
   function resetSourceImage() {
     sourceImageUrl.value = null
     sourceImageBase64.value = null
     cloudFileID.value = null
     resultImageUrl.value = null
     templateTargetUrl.value = null
+    cartoonAvatarUrl.value = null
     isGenerating.value = false
   }
 
@@ -156,6 +163,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     setCloudFileID,
     templateTargetUrl,
     setTemplateTargetUrl,
+    cartoonAvatarUrl,
+    setCartoonAvatar,
     resetSourceImage,
     resetResult,
   }

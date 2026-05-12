@@ -556,8 +556,8 @@ async function generateViaPiapi(input: GenerateFaceSwapInput): Promise<GenerateF
  *
  * 请求格式：
  *   POST /api/v3/images/generations
- *   image: [用户照片URL]   仅传用户照片，由提示词驱动风格转换
- *   prompt: 卡通头像生成指令（可通过 VITE_JIMENG_PROMPT 覆盖）
+ *   image: [模板图URL, 用户人脸URL]  两张图：模板 + 用户脸
+ *   prompt: 换脸指令（可通过 VITE_JIMENG_PROMPT 覆盖）
  */
 async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<GenerateFaceSwapOutput> {
   const baseUrl = getEnvString('VITE_JIMENG_BASE_URL') || 'https://ark.cn-beijing.volces.com'
@@ -565,7 +565,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
   const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
   const prompt =
     getEnvString('VITE_JIMENG_PROMPT') ||
-    '学习皮克斯感的 3D动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。图中人物面部装饰，发型以及发饰，服装，配饰、表情、姿势保持一致'
+    '极致高清，写实摄影，保持原图的发型、服装及背景环境与光效色彩完全不变，仅将面部特征替换为参考图中的人物，要求肤色融合自然，五官结构精准，表情生动，保持光照和亮度与原始图片一致'
   const size = getEnvString('VITE_JIMENG_SIZE') || '1024x1024'
   const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
 
@@ -576,12 +576,13 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
     )
   }
 
-  // Step 1: 上传用户照片至公网 CDN
-  input.onProgress?.({ stage: 'upload', progress: 10, detail: 'Uploading photo to CDN...' })
-  const userPhotoUrl = await uploadToImgBB(input.imageUrl)
+  // Step 1: 上传用户人脸至公网 CDN
+  input.onProgress?.({ stage: 'upload', progress: 10, detail: 'Uploading facial image to CDN...' })
+  const swapImageUrl = await uploadToImgBB(input.imageUrl)
+  const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
-  // Step 2: 调用即梦接口（单图风格转换：用户照片 → 皮克斯卡通头像）
-  input.onProgress?.({ stage: 'submit', progress: 35, detail: 'Generating cartoon avatar via Jimeng...' })
+  // Step 2: 调用即梦接口（双图换脸：[模板图, 人脸图]）
+  input.onProgress?.({ stage: 'submit', progress: 35, detail: 'Generating face swap via Jimeng...' })
 
   let response: Response
   try {
@@ -595,7 +596,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
         body: JSON.stringify({
           model,
           prompt,
-          image: [userPhotoUrl],   // 只传用户照片，不传模板底图
+          image: [targetImageUrl, swapImageUrl],
           size,
           output_format: 'png',
           watermark: false,
@@ -645,4 +646,54 @@ async function generateFaceSwap(input: GenerateFaceSwapInput): Promise<GenerateF
 
 export const cloudFaceSwapClient: FaceSwapClient = {
   generateFaceSwap,
+}
+
+// ─── 皮克斯卡通头像生成（用于证书，与换脸结果独立）────────────────────────────
+
+/**
+ * 使用即梦 API 将用户照片转换为皮克斯风格 3D 卡通头像。
+ * 仅传入用户照片（单图），不依赖换脸模板。
+ * 可通过 VITE_JIMENG_CARTOON_PROMPT 环境变量覆盖提示词。
+ */
+export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
+  const baseUrl = getEnvString('VITE_JIMENG_BASE_URL') || 'https://ark.cn-beijing.volces.com'
+  const apiKey = getEnvString('VITE_JIMENG_API_KEY')
+  const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
+  const prompt =
+    getEnvString('VITE_JIMENG_CARTOON_PROMPT') ||
+    '学习皮克斯感的 3D动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。图中人物面部装饰，发型以及发饰，服装，配饰、表情、姿势保持一致'
+  const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
+
+  if (!apiKey) throw new Error('未配置 VITE_JIMENG_API_KEY')
+
+  const userPhotoUrl = await uploadToImgBB(imageUrl)
+
+  const response = await withTimeout(
+    fetch(`${baseUrl}/api/v3/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        image: [userPhotoUrl],   // 单图：仅用户照片
+        size: '1024x1024',
+        output_format: 'png',
+        watermark: false,
+      }),
+    }),
+    timeoutMs,
+  )
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '')
+    throw new Error(`即梦卡通头像生成失败 ${response.status}：${errBody.slice(0, 120)}`)
+  }
+
+  const payload = (await response.json()) as { data?: Array<{ url?: string }> }
+  const url = payload.data?.[0]?.url ?? ''
+  if (!url) throw new Error('即梦未返回卡通头像 URL')
+  return url
 }

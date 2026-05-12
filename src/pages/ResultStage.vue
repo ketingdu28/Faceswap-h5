@@ -5,6 +5,7 @@ import { Download, RotateCcw } from 'lucide-vue-next'
 import AgentCertificate from '../components/AgentCertificate.vue'
 import { useAgentFlowStore } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
+import { generateCartoonAvatar } from '../services/cloudFaceSwapClient'
 import { FaceSwapServiceError } from '../services/errors'
 import certificateTemplate from '../assets/certificate-template.webp'
 
@@ -102,8 +103,11 @@ const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
 // 预生成证书 blob：result 就绪后立即在后台合成，用户点下载时直接取用
 const cachedCertBlob = ref<Blob | null>(null)
 
+// 证书使用卡通头像，若尚未生成则回退换脸结果
+const certPhotoUrl = computed(() => flow.cartoonAvatarUrl ?? flow.resultImageUrl)
+
 async function buildCertBlob(): Promise<Blob | null> {
-  let photoSrc = flow.resultImageUrl
+  let photoSrc = certPhotoUrl.value
   if (!photoSrc) return null
   try {
     // 先确保照片是 data: URL，否则 loadImg 的 crossOrigin='anonymous'
@@ -147,9 +151,8 @@ async function buildCertBlob(): Promise<Blob | null> {
   }
 }
 
-// result 就绪后静默预生成，不影响 UI；失败则 3 秒后自动重试一次（代理可能需要冷启动）
-watch(isReady, (ready) => {
-  if (!ready) return
+// 卡通头像就绪后重新预生成证书 blob（卡通头像比换脸结果晚到）
+function triggerCertPregen() {
   buildCertBlob().then((blob) => {
     if (blob) {
       cachedCertBlob.value = blob
@@ -159,7 +162,11 @@ watch(isReady, (ready) => {
       }, 3000)
     }
   })
-})
+}
+// 换脸结果就绪时先用换脸图预生成一次（卡通头像还未到时的兜底）
+watch(isReady, (ready) => { if (ready) triggerCertPregen() })
+// 卡通头像就绪后刷新证书 blob
+watch(() => flow.cartoonAvatarUrl, (url) => { if (url) triggerCertPregen() })
 const visibleLogs = computed(() => {
   const start = currentLogOffset.value
   return Array.from({ length: logWindowSize }).map((_, index) => logs.value[(start + index) % logs.value.length])
@@ -199,6 +206,9 @@ async function runGenerationIfNeeded() {
     flow.setResultImage(resultUrl)
     flow.certificateMeta = response.meta
     generationProgress.value = 100
+
+    // 换脸完成后，在后台独立生成皮克斯卡通头像用于证书（不阻塞换脸结果展示）
+    generateCartoonForCertificate(flow.sourceImageUrl ?? '')
   } catch (error) {
     if (error instanceof FaceSwapServiceError) {
       exportMessage.value = error.message
@@ -217,6 +227,22 @@ async function runGenerationIfNeeded() {
     }
   } finally {
     flow.setGenerating(false)
+  }
+}
+
+// 后台生成皮克斯卡通头像，结果写入 flow.cartoonAvatarUrl
+async function generateCartoonForCertificate(sourceImageUrl: string) {
+  if (!sourceImageUrl) return
+  try {
+    const cartoonUrl = await generateCartoonAvatar(sourceImageUrl)
+    // 转 base64 避免证书导出时跨域问题（失败则保留原始 URL）
+    let localUrl = cartoonUrl
+    try { localUrl = await toDataUrl(cartoonUrl) } catch { /* keep original */ }
+    flow.setCartoonAvatar(localUrl)
+  } catch (err) {
+    console.warn('[CartoonAvatar] 生成失败，证书将使用换脸结果作为回退：', err)
+    // 回退：使用换脸结果
+    flow.setCartoonAvatar(flow.resultImageUrl)
   }
 }
 
@@ -396,7 +422,7 @@ onUnmounted(() => {
           :codename="flow.certificateMeta.codename"
           :code="flow.certificateMeta.code"
           :joined-date="flow.certificateMeta.joinedDate"
-          :image-url="resultImage || ''"
+          :image-url="certPhotoUrl || ''"
         />
       </div>
       <div v-else class="card-shell rounded-[30px] p-3 text-xs text-cyan-100/80">
