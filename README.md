@@ -1,6 +1,3 @@
-<img width="430" height="927" alt="bdd6a3040f32bfbd818817bdfb24f203" src="https://github.com/user-attachments/assets/65c5a7fb-5fcf-4093-a6c1-93bdc725147a" />
-<img width="430" height="932" alt="24431eabcd17c83e032382c6401e905a" src="https://github.com/user-attachments/assets/a81e1952-a65f-4096-b28c-a841f6da56a8" />
-
 # XMeta Agent H5
 
 独立 Vue 3 + Vite + Tailwind 的移动端 H5 AI 换脸工具示例，包含：
@@ -10,6 +7,9 @@
 - Pinia 跨页面状态同步 + `sessionStorage` 持久化
 - 可替换云函数调用封装（`mock` / `cloud`）
 
+| 界面一：上传图片 | 界面二：生成结果 |
+| :---: | :---: |
+| <img width="350" src="https://github.com/user-attachments/assets/65c5a7fb-5fcf-4093-a6c1-93bdc725147a" /> | <img width="350" src="https://github.com/user-attachments/assets/a81e1952-a65f-4096-b28c-a841f6da56a8" /> |
 ## 启动
 
 ```bash
