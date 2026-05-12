@@ -15,9 +15,9 @@ import sceneImgC from '../assets/style-c.png'
 // 未配置的场景会显示白色占位框，等待后续补充。
 //
 // 场景 A（风起洛阳）模板
-// import templateA1 from '../assets/template-a-1.webp'
-// import templateA2 from '../assets/template-a-2.webp'
-// import templateA3 from '../assets/template-a-3.webp'
+import templateA1 from '../assets/template-a-1.webp'
+import templateA2 from '../assets/template-a-2.webp'
+import templateA3 from '../assets/template-a-3.webp'
 //
 // 场景 B（魔法冰堡）模板 ← 取消下面三行注释并放入图片文件即可生效
 import templateB1 from '../assets/template-b-1.webp'
@@ -25,9 +25,9 @@ import templateB2 from '../assets/template-b-2.webp'
 import templateB3 from '../assets/template-b-3.webp'
 //
 // 场景 C（冰龙寻珠）模板
-// import templateC1 from '../assets/template-c-1.webp'
-// import templateC2 from '../assets/template-c-2.webp'
-// import templateC3 from '../assets/template-c-3.webp'
+import templateC1 from '../assets/template-c-1.webp'
+import templateC2 from '../assets/template-c-2.webp'
+import templateC3 from '../assets/template-c-3.webp'
 
 const PoseGuideLayer = defineAsyncComponent(() => import('../components/PoseGuideLayer.vue'))
 
@@ -92,9 +92,9 @@ const sceneImages: Record<StyleOption, string> = { A: sceneImgA, B: sceneImgB, C
 // 每个场景的 3 张换脸模板，null 表示显示白色占位框
 // 图片备好后：1) 取消上方注释中的 import  2) 填入下方对应位置
 const sceneTemplates: Partial<Record<StyleOption, [string | null, string | null, string | null]>> = {
-  // A: [templateA1, templateA2, templateA3],
+   A: [templateA1, templateA2, templateA3],
    B: [templateB1, templateB2, templateB3],  // ← 魔法冰堡，图片就绪后填这行
-  // C: [templateC1, templateC2, templateC3],
+   C: [templateC1, templateC2, templateC3],
 }
 const selectedScene = computed(() => styles.find((s) => s.id === flow.selectedStyle) ?? null)
 

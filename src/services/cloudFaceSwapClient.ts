@@ -565,7 +565,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
   const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
   const prompt =
     getEnvString('VITE_JIMENG_PROMPT') ||
-    '保持模特姿势和服装细节不变，仅将脸部替换为输入图片的脸部'
+    '极致高清，写实摄影，保持原图的发型、服装及背景环境与光效色彩完全不变，仅将面部特征替换为参考图中的人物，要求肤色融合自然，五官结构精准，表情生动'
   const size = getEnvString('VITE_JIMENG_SIZE') || '1024x1024'
   const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
 
