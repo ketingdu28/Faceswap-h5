@@ -270,7 +270,7 @@ const preflightMessage = computed(() => {
   if (!err) return ''
   switch (err.kind) {
     case 'INSECURE':
-      return '魔镜需要在 HTTPS 结界内才能开启，请通过安全链接（https:// 或 localhost）进入。'
+      return '魔镜需要在 HTTPS 结界内才能开启,请通过安全链接(https:// 或 localhost)进入。'
     case 'NO_API':
       return '当前浏览器不支持相机能力，请使用最新版主流浏览器后重试。'
     case 'PERMISSION_DENIED':
