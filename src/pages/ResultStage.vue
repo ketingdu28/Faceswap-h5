@@ -99,6 +99,8 @@ let logTimer: number | undefined
 
 const isReady = computed(() => Boolean(flow.resultImageUrl))
 const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
+const cartoonFailed = ref(false)
+const cartoonErrorMsg = ref('')
 
 // 预生成证书 blob：result 就绪后立即在后台合成，用户点下载时直接取用
 const cachedCertBlob = ref<Blob | null>(null)
@@ -127,10 +129,10 @@ async function buildCertBlob(): Promise<Blob | null> {
     const ctx = canvas.getContext('2d')!
     ctx.fillStyle = '#050c1d'
     ctx.fillRect(0, 0, W, H)
-    const destX = 0
+    const destX = W * 0.25
     const destY = H * 0.25
     const destW = W * 0.50
-    const destH = H * 0.55
+    const destH = H * 0.50
     const imgAspect = photoImg.naturalWidth / photoImg.naturalHeight
     const destAspect = destW / destH
     let sx = 0, sy = 0
@@ -212,8 +214,8 @@ async function runGenerationIfNeeded() {
     flow.certificateMeta = response.meta
     generationProgress.value = 100
 
-    // 换脸完成后，在后台独立生成皮克斯卡通头像用于证书（不阻塞换脸结果展示）
-    generateCartoonForCertificate(flow.sourceImageUrl ?? '')
+    // 换脸完成后，用已上传到 ImgBB 的公网 URL 直接生成卡通头像（跳过二次上传）
+    generateCartoonForCertificate(response.swapImageUrl ?? flow.sourceImageUrl ?? '')
   } catch (error) {
     if (error instanceof FaceSwapServiceError) {
       exportMessage.value = error.message
@@ -238,6 +240,7 @@ async function runGenerationIfNeeded() {
 // 后台生成皮克斯卡通头像，结果写入 flow.cartoonAvatarUrl
 async function generateCartoonForCertificate(sourceImageUrl: string) {
   if (!sourceImageUrl) return
+  cartoonFailed.value = false
   try {
     const cartoonUrl = await generateCartoonAvatar(sourceImageUrl)
     // 转 base64 避免证书导出时跨域问题（失败则保留原始 URL）
@@ -245,10 +248,17 @@ async function generateCartoonForCertificate(sourceImageUrl: string) {
     try { localUrl = await toDataUrl(cartoonUrl) } catch { /* keep original */ }
     flow.setCartoonAvatar(localUrl)
   } catch (err) {
-    console.warn('[CartoonAvatar] 生成失败，证书将使用换脸结果作为回退：', err)
-    // 回退：使用换脸结果
-    flow.setCartoonAvatar(flow.resultImageUrl)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[CartoonAvatar] 生成失败：', msg)
+    cartoonErrorMsg.value = msg
+    cartoonFailed.value = true
   }
+}
+
+async function retryCartoon() {
+  cartoonFailed.value = false
+  cartoonErrorMsg.value = ''
+  generateCartoonForCertificate(flow.sourceImageUrl ?? '')
 }
 
 function loadImg(src: string): Promise<HTMLImageElement> {
@@ -423,8 +433,15 @@ onUnmounted(() => {
         v-if="!teaserMode"
         class="card-shell rounded-[30px] p-0 w-full"
       >
+        <!-- 卡通头像生成失败时显示重试入口 -->
+        <div v-if="isReady && cartoonFailed" class="cartoon-loading">
+          <div class="cartoon-error-icon">✕</div>
+          <p class="cartoon-loading-text">卡通头像生成失败</p>
+          <p v-if="cartoonErrorMsg" class="cartoon-error-detail">{{ cartoonErrorMsg }}</p>
+          <button type="button" class="cartoon-retry-btn" @click="retryCartoon">重新生成</button>
+        </div>
         <!-- 卡通头像生成中时显示 loading 遮罩 -->
-        <div v-if="isReady && !certPhotoUrl" class="cartoon-loading">
+        <div v-else-if="isReady && !certPhotoUrl" class="cartoon-loading">
           <div class="cartoon-loading-orb"></div>
           <p class="cartoon-loading-text">正在生成卡通头像...</p>
         </div>
@@ -659,6 +676,41 @@ onUnmounted(() => {
   font-size: 13px;
   letter-spacing: 0.06em;
   color: rgba(200, 230, 255, 0.7);
+}
+.cartoon-error-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 100, 100, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: rgba(255, 130, 130, 0.85);
+}
+.cartoon-error-detail {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 160, 160, 0.7);
+  max-width: 280px;
+  text-align: center;
+  word-break: break-all;
+}
+.cartoon-retry-btn {
+  margin-top: 4px;
+  padding: 6px 20px;
+  border-radius: 20px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(200, 230, 255, 0.9);
+  background: rgba(68, 217, 255, 0.12);
+  border: 0.5px solid rgba(68, 217, 255, 0.35);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.cartoon-retry-btn:hover {
+  background: rgba(68, 217, 255, 0.22);
 }
 @keyframes cartoonSpin {
   to { transform: rotate(360deg); }

@@ -90,10 +90,10 @@ watch(() => props.imageUrl, async (url) => {
  */
 .certificate-bg-image {
   position: absolute;
-  top: 29%;      /* ← 调大：照片整体下移；调小：上移 */
-  left: 0;       /* ← 调大：照片右移（如 "3%"） */
+  top: 25%;      /* ← 调大：照片整体下移；调小：上移 */
+  left: 25%;       /* ← 调大：照片右移（如 "3%"） */
   width: 50%;    /* ← 调大：照片变宽，覆盖更多左侧区域 */
-  height: 55%;   /* ← 调大：照片变高，向下延伸 */
+  height: 50%;   /* ← 调大：照片变高，向下延伸 */
   object-fit: cover;
   object-position: center top; /* ← 改 "center 20%" 可让脸部下移 */
   z-index: 1;

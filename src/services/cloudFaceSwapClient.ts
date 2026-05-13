@@ -4,6 +4,16 @@ import { FaceSwapServiceError } from './errors'
 import { uploadToImgBB } from './uploadToImgBB'
 import { generateAgentCode, generateTimestamp } from './agentMeta'
 
+// 同一次 session 中换脸和卡通头像会用到同一张用户原图，避免重复上传 ImgBB
+const _imgbbCache = new Map<string, string>()
+async function cachedUploadToImgBB(imageUrl: string): Promise<string> {
+  const hit = _imgbbCache.get(imageUrl)
+  if (hit) return hit
+  const url = await uploadToImgBB(imageUrl)
+  _imgbbCache.set(imageUrl, url)
+  return url
+}
+
 // ─── 云函数 Bridge（微信 WebView 注入） ────────────────────────────────────────
 /**
  * window.__XmetaCloudInvoke 由微信小程序 WebView 注入，
@@ -226,7 +236,7 @@ async function generateViaBackend(input: GenerateFaceSwapInput): Promise<Generat
 
   // Step 1: 上传用户图片至公网，获取 ImgBB URL（与小程序 uploadToPublic 等价）
   input.onProgress?.({ stage: 'upload', progress: 8, detail: 'Uploading facial image to public CDN...' })
-  const swapImageUrl = await uploadToImgBB(input.imageUrl)
+  const swapImageUrl = await cachedUploadToImgBB(input.imageUrl)
   const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   input.onProgress?.({ stage: 'submit', progress: 20, detail: 'Submitting face-swap task to backend...' })
@@ -316,7 +326,7 @@ async function generateViaInvoker(input: GenerateFaceSwapInput): Promise<Generat
 
   // Step 1: 上传用户图片至公网（小程序在客户端完成，H5 同样在调用云函数前完成）
   input.onProgress?.({ stage: 'upload', progress: 8, detail: 'Uploading facial image to public CDN...' })
-  const swapImageUrl = await uploadToImgBB(input.imageUrl)
+  const swapImageUrl = await cachedUploadToImgBB(input.imageUrl)
   const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   // Step 2: 提交任务，含重试
@@ -453,7 +463,7 @@ async function generateViaPiapi(input: GenerateFaceSwapInput): Promise<GenerateF
 
   // Step 1: 上传用户图片至公网
   input.onProgress?.({ stage: 'upload', progress: 8, detail: 'Uploading facial image to public CDN...' })
-  const swapImageUrl = await uploadToImgBB(input.imageUrl)
+  const swapImageUrl = await cachedUploadToImgBB(input.imageUrl)
   const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   // Step 2: 向 PiAPI 提交 face-swap 任务（与云函数 submit() 逻辑相同）
@@ -582,7 +592,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
 
   // Step 1: 上传用户人脸至公网 CDN
   input.onProgress?.({ stage: 'upload', progress: 10, detail: 'Uploading facial image to CDN...' })
-  const swapImageUrl = await uploadToImgBB(input.imageUrl)
+  const swapImageUrl = await cachedUploadToImgBB(input.imageUrl)
   const targetImageUrl = await ensurePublicTargetUrl(resolveTargetUrl(input))
 
   // Step 2: 调用即梦接口（双图换脸：[模板图, 人脸图]）
@@ -635,7 +645,7 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
   }
 
   input.onProgress?.({ stage: 'done', progress: 100, detail: 'Mission artifact ready.' })
-  return { resultUrl, meta: buildMeta(input.style) }
+  return { resultUrl, swapImageUrl, meta: buildMeta(input.style) }
 }
 
 // ─── 入口 ─────────────────────────────────────────────────────────────────────
@@ -665,13 +675,20 @@ export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
   const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
   const prompt =
     getEnvString('VITE_JIMENG_CARTOON_PROMPT') ||
-    '学习皮克斯感的 3D动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。图中人物面部装饰，发型以及发饰，服装，配饰、表情、姿势保持一致'
+    '学习皮克斯3D画风的动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。生成图片为人物的正面半身照，图片比例1：1，背景浅黄色底，只要完整人物'
+  // 与换脸保持一致的 size 配置，避免 API 拒绝不支持的分辨率
+  const size = getEnvString('VITE_JIMENG_SIZE') || '1024x1024'
   const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
 
   if (!apiKey) throw new Error('未配置 VITE_JIMENG_API_KEY')
 
-  const userPhotoUrl = await uploadToImgBB(imageUrl)
+  // 已是公网 HTTP URL（换脸步骤已上传至 ImgBB）时直接使用，无需再次上传
+  const userPhotoUrl = imageUrl.startsWith('http')
+    ? imageUrl
+    : await cachedUploadToImgBB(imageUrl)
 
+  // Seedream 模型要求传入 2 张参考图；此处以同一张用户照片填充两个槽位，
+  // 让模型在保留面部特征的同时按 prompt 进行风格变换
   const response = await withTimeout(
     fetch(`${baseUrl}/api/v3/images/generations`, {
       method: 'POST',
@@ -682,8 +699,8 @@ export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
       body: JSON.stringify({
         model,
         prompt,
-        image: [userPhotoUrl],   // 单图：仅用户照片
-        size: '1024x1024',
+        image: [userPhotoUrl, userPhotoUrl],
+        size,
         output_format: 'png',
         watermark: false,
       }),
@@ -693,11 +710,11 @@ export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '')
-    throw new Error(`即梦卡通头像生成失败 ${response.status}：${errBody.slice(0, 120)}`)
+    throw new Error(`即梦卡通头像生成失败 HTTP ${response.status}：${errBody.slice(0, 200)}`)
   }
 
   const payload = (await response.json()) as { data?: Array<{ url?: string }> }
   const url = payload.data?.[0]?.url ?? ''
-  if (!url) throw new Error('即梦未返回卡通头像 URL')
+  if (!url) throw new Error(`即梦未返回卡通头像 URL，响应：${JSON.stringify(payload).slice(0, 200)}`)
   return url
 }

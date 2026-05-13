@@ -44,6 +44,8 @@ export interface GenerateFaceSwapInput {
 
 export interface GenerateFaceSwapOutput {
   resultUrl: string
+  /** 换脸上传到 ImgBB 的用户原图公网 URL；可直接传给卡通头像生成，避免重复上传 */
+  swapImageUrl?: string
   meta: {
     codename: string
     code: string       // 格式 AGENT-XXXX
