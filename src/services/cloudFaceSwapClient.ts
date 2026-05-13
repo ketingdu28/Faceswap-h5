@@ -99,22 +99,26 @@ function resolveTargetUrl(input: GenerateFaceSwapInput): string {
 }
 
 /**
- * 确保目标图片是公网可访问的 HTTPS URL。
- * - 已是公网 HTTPS（非 localhost）→ 直接返回
- * - localhost / 相对路径 → 从浏览器 fetch 后上传 ImgBB，结果缓存到 sessionStorage
+ * 确保目标图片是即梦 API 可访问的 ImgBB 公网 URL。
+ *
+ * 即梦 API（火山引擎，国内服务器）无法访问 Vercel / localhost 等域名，
+ * 因此必须将模板图上传到 ImgBB 后再传给 API。
+ * 已是 ImgBB URL 的直接返回；其余 URL 一律 fetch → 上传 ImgBB（结果缓存）。
  */
 async function ensurePublicTargetUrl(url: string): Promise<string> {
   if (!url) return url
-  const isPublic = /^https:\/\//i.test(url) && !url.includes('localhost') && !url.includes('127.0.0.1')
-  if (isPublic) return url
 
-  // 用 URL 的后半段作 cache key（去掉哈希等不稳定字符）
-  const cacheKey = `xm_target_${url.replace(/[^a-zA-Z0-9]/g, '_').slice(-50)}`
+  // 已是 ImgBB URL，即梦可直接访问
+  if (url.includes('ibb.co')) return url
+
+  // 用 URL 末段作 cache key，避免 Vercel 哈希路径每次重传
+  const cacheKey = `xm_target_${url.replace(/[^a-zA-Z0-9]/g, '_').slice(-60)}`
   try {
     const cached = sessionStorage.getItem(cacheKey)
     if (cached) return cached
   } catch { /* ignore */ }
 
+  // fetch → base64 → 上传 ImgBB（兼容 localhost / Vercel / 任意 URL）
   const res = await fetch(url)
   if (!res.ok) throw new Error(`无法获取模板图片：HTTP ${res.status}`)
   const blob = await res.blob()
