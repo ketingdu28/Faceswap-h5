@@ -1519,7 +1519,7 @@ async function startGeneration() {
 
 /* 白色遮罩占位图 — 替换时将此 div 换为 <img> 即可 */
 /* 实际模板图片（替换占位后生效） */
-deep().template-img {
+:deep(.template-img) {
   width: 100%;
   aspect-ratio: 3 / 4;
   border-radius: 0%;
