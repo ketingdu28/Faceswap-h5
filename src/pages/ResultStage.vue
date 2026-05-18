@@ -7,7 +7,6 @@ import { useAgentFlowStore } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
 import { generateCartoonAvatar, generateCertificateFromPhoto } from '../services/cloudFaceSwapClient'
 import { FaceSwapServiceError } from '../services/errors'
-import certificateTemplate from '../assets/certificate-template.webp'
 
 const router = useRouter()
 const flow = useAgentFlowStore()
@@ -164,8 +163,10 @@ async function buildCertBlob(): Promise<Blob | null> {
     if (!photoSrc.startsWith('data:') && !photoSrc.startsWith('blob:')) {
       photoSrc = await toDataUrl(photoSrc) // 直连 CORS 或走 /api/proxy-image
     }
+    const templateSrc = CERT_TEMPLATE_URL
+    if (!templateSrc) return null
     const [templateImg, photoImg] = await Promise.all([
-      loadImg(certificateTemplate),
+      loadImg(templateSrc),
       loadImg(photoSrc),
     ])
     const W = templateImg.naturalWidth

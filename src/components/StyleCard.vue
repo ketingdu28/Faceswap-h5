@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { Monitor, Sparkles, Shield } from 'lucide-vue-next'
 import type { StyleOption } from '../stores/agentFlow'
-import styleAImage from '../assets/style-a.png'
-import styleBImage from '../assets/style-b.png'
-import styleCImage from '../assets/style-c.png'
 
 const props = defineProps<{
   styleId: StyleOption
@@ -18,10 +15,10 @@ const iconMap = {
   C: Sparkles,
 }
 
-const previewImageMap = {
-  A: styleAImage,
-  B: styleBImage,
-  C: styleCImage,
+const previewImageMap: Record<StyleOption, string> = {
+  A: (import.meta.env.VITE_TARGET_URL_A as string | undefined) || '',
+  B: (import.meta.env.VITE_TARGET_URL_B as string | undefined) || '',
+  C: (import.meta.env.VITE_TARGET_URL_C as string | undefined) || '',
 }
 </script>
 
