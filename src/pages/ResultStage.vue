@@ -315,6 +315,7 @@ async function generateCartoonForCertificate(sourceImageUrl: string) {
 
   if (CERT_TEMPLATE_URL) {
     // 一体化：单次 API 调用完成皮克斯头像生成 + 证书融合
+    console.log('[Certificate] 一步生成模式：皮克斯头像 + 证书融合（单次 API 调用）')
     isCertGenerating.value = true
     certGenFailed.value = false
     certGenMsg.value = ''
