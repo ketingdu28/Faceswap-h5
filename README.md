@@ -9,7 +9,7 @@ Vue 3 + Vite + Tailwind CSS 移动端 H5，集成即梦（火山引擎 Doubao Se
 
 | 界面一：上传图片 | 界面二：生成结果 |
 | :---: | :---: |
-| <img width="350" src="https://github.com/user-attachments/assets/65c5a7fb-5fcf-4093-a6c1-93bdc725147a" /> | <img width="430" height="924" alt="e5bf89e63f0d7b533d3cd4f538844646" src="https://github.com/user-attachments/assets/fdcfa8aa-1e56-4e0e-b16f-e1d1d66cd11f" /> |
+|<img width="430" height="907" alt="0bf6797504c24bbbf25cd468ec3b9f22" src="https://github.com/user-attachments/assets/f4b14d13-b11b-42f5-b76f-b16d5c1b2566" />| <img width="430" height="924" alt="e5bf89e63f0d7b533d3cd4f538844646" src="https://github.com/user-attachments/assets/fdcfa8aa-1e56-4e0e-b16f-e1d1d66cd11f" /> |
 
 ## 启动
 
