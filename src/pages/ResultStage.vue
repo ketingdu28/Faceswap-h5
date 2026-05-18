@@ -5,7 +5,7 @@ import { Download, RotateCcw } from 'lucide-vue-next'
 import AgentCertificate from '../components/AgentCertificate.vue'
 import { useAgentFlowStore } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
-import { generateCartoonAvatar } from '../services/cloudFaceSwapClient'
+import { generateCartoonAvatar, generateCertificateFromPhoto } from '../services/cloudFaceSwapClient'
 import { FaceSwapServiceError } from '../services/errors'
 import certificateTemplate from '../assets/certificate-template.webp'
 
@@ -56,18 +56,31 @@ async function downloadResultImage() {
   if (!url || isDownloading.value) return
   isDownloading.value = true
   try {
-    const response = await fetch(url, { mode: 'cors' })
-    const blob = await response.blob()
+    // 用 canvas 将调色滤镜烘焙进图片，保证下载文件与预览视觉一致
+    const img = await loadImg(
+      url.startsWith('data:') || url.startsWith('blob:')
+        ? url
+        : await toDataUrl(url).catch(() => url)
+    )
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')!
+    ctx.filter = RESULT_IMG_FILTER
+    ctx.drawImage(img, 0, 0)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95))
+    if (!blob) throw new Error('canvas export failed')
     const objectUrl = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = `xmeta-result-${Date.now()}.png`
+    link.download = `xmeta-result-${Date.now()}.jpg`
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    URL.revokeObjectURL(objectUrl)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000)
   } catch {
+    // 跨域或 canvas 失败时降级直接打开原图
     window.open(url, '_blank', 'noopener')
   } finally {
     isDownloading.value = false
@@ -99,16 +112,50 @@ let logTimer: number | undefined
 
 const isReady = computed(() => Boolean(flow.resultImageUrl))
 const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
+
+// ─── 换脸结果预览图样式 ────────────────────────────────────────────────────────
+// 调色参数统一在此处修改，预览和下载保存的图片会自动保持一致
+const RESULT_IMG_FILTER = 'saturate(130%) contrast(90%) brightness(110%)'
+
+const resultImgStyle = {
+  maxHeight: '70vh',
+  minHeight: '300px',
+  borderRadius: '10px',
+  objectFit: 'cover' as const,   // contain = 完整显示不裁切；'cover' = 填满裁切
+  objectPosition: 'center top',
+  filter: RESULT_IMG_FILTER,
+}
+
 const cartoonFailed = ref(false)
 const cartoonErrorMsg = ref('')
+
+// AI 证书生成状态
+const certGenFailed = ref(false)
+const certGenMsg = ref('')
+const isCertGenerating = ref(false)
+
+// 证书显示优先级：AI 生成证书 > Canvas 合成证书
+const aiCertUrl = computed(() => flow.aiCertificateUrl)
+const certPhotoUrl = computed(() => flow.cartoonAvatarUrl)
+
+// 证书模板 URL（从环境变量读取，上传到 ImgBB 后配置）
+const CERT_TEMPLATE_URL = (import.meta.env.VITE_CERTIFICATE_TEMPLATE_URL as string | undefined)?.trim() ?? ''
 
 // 预生成证书 blob：result 就绪后立即在后台合成，用户点下载时直接取用
 const cachedCertBlob = ref<Blob | null>(null)
 
-// 证书只展示卡通头像，未生成时为 null（显示占位符，不回退换脸图）
-const certPhotoUrl = computed(() => flow.cartoonAvatarUrl)
-
 async function buildCertBlob(): Promise<Blob | null> {
+  // 优先使用即梦 AI 生成的完整证书图，直接 fetch 返回无需 Canvas 合成
+  if (aiCertUrl.value) {
+    try {
+      const src = aiCertUrl.value.startsWith('data:') || aiCertUrl.value.startsWith('blob:')
+        ? aiCertUrl.value
+        : await toDataUrl(aiCertUrl.value)
+      const res = await fetch(src)
+      return res.ok ? await res.blob() : null
+    } catch { return null }
+  }
+
   let photoSrc = certPhotoUrl.value
   if (!photoSrc) return null
   try {
@@ -143,7 +190,11 @@ async function buildCertBlob(): Promise<Blob | null> {
     } else {
       sh = Math.round(photoImg.naturalWidth / destAspect)
     }
+    // 对 AI 生成图提升饱和度和对比度，修正偏色、灰暗问题
+    ctx.filter = 'saturate(180%) contrast(115%) brightness(98%)'
     ctx.drawImage(photoImg, sx, sy, sw, sh, destX, destY, destW, destH)
+    // 重置滤镜，防止叠加到证书模板层
+    ctx.filter = 'none'
     ctx.drawImage(templateImg, 0, 0, W, H)
     return await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, 'image/jpeg', 0.92)
@@ -175,9 +226,13 @@ const visibleLogs = computed(() => {
 })
 
 async function runGenerationIfNeeded() {
-  // 换脸结果已存在（sessionStorage 恢复）但卡通头像未生成时，补触发卡通生成
+  // 换脸结果已存在（sessionStorage 恢复）时，补触发未完成的生成步骤
   if (flow.resultImageUrl) {
-    if (!flow.cartoonAvatarUrl && flow.sourceImageUrl) {
+    if (!flow.aiCertificateUrl && CERT_TEMPLATE_URL && flow.sourceImageUrl) {
+      // 模板已配置：直接触发一体化证书生成（卡通+证书合并）
+      generateCartoonForCertificate(flow.sourceImageUrl)
+    } else if (!flow.cartoonAvatarUrl && !CERT_TEMPLATE_URL && flow.sourceImageUrl) {
+      // 无模板降级：触发卡通头像 → Canvas 合成
       generateCartoonForCertificate(flow.sourceImageUrl)
     }
     return
@@ -190,16 +245,32 @@ async function runGenerationIfNeeded() {
 
   flow.setGenerating(true)
   generationProgress.value = 12
+
+  // 换脸提交后立即并行启动证书/卡通生成，避免串行等待
+  let bgTaskTriggered = false
+  function tryTriggerBgTask(sourceUrl: string) {
+    if (bgTaskTriggered || !sourceUrl) return
+    bgTaskTriggered = true
+    // 无论是否配置模板，都先生成皮克斯卡通头像（与换脸并行）
+    // 有模板时：卡通头像生成完成后自动触发证书融合（generateCartoonForCertificate 内部处理）
+    // 无模板时：卡通头像生成完成后降级 Canvas 合成
+    generateCartoonForCertificate(sourceUrl)
+  }
+
   try {
     const response = await faceSwapClient.generateFaceSwap({
       imageUrl: flow.sourceImageUrl,
       style: flow.selectedStyle,
       cloudFileID: flow.cloudFileID,
-      targetImageUrl: flow.templateTargetUrl ?? undefined, // 用户选定的模板底图
+      targetImageUrl: flow.templateTargetUrl ?? undefined,
       onProgress: (event) => {
         generationProgress.value = Math.max(8, Math.min(98, event.progress))
         if (event.detail) {
           logs.value = [`> ${event.detail}`, ...logs.value].slice(0, 10)
+        }
+        // 换脸已提交 Jimeng（ImgBB 上传完毕），立即并行启动后台任务
+        if (event.stage === 'submit') {
+          tryTriggerBgTask(flow.sourceImageUrl ?? '')
         }
       },
     })
@@ -214,8 +285,8 @@ async function runGenerationIfNeeded() {
     flow.certificateMeta = response.meta
     generationProgress.value = 100
 
-    // 换脸完成后，用已上传到 ImgBB 的公网 URL 直接生成卡通头像（跳过二次上传）
-    generateCartoonForCertificate(response.swapImageUrl ?? flow.sourceImageUrl ?? '')
+    // 兜底：若 onProgress 未触发 submit（极少数 provider），在这里补启动
+    tryTriggerBgTask(response.swapImageUrl ?? flow.sourceImageUrl ?? '')
   } catch (error) {
     if (error instanceof FaceSwapServiceError) {
       exportMessage.value = error.message
@@ -237,13 +308,34 @@ async function runGenerationIfNeeded() {
   }
 }
 
-// 后台生成皮克斯卡通头像，结果写入 flow.cartoonAvatarUrl
+// 后台生成证书：有模板时一步到位（皮克斯转换 + 融合），无模板时仅生成卡通头像供 Canvas 合成
 async function generateCartoonForCertificate(sourceImageUrl: string) {
   if (!sourceImageUrl) return
+
+  if (CERT_TEMPLATE_URL) {
+    // 一体化：单次 API 调用完成皮克斯头像生成 + 证书融合
+    isCertGenerating.value = true
+    certGenFailed.value = false
+    certGenMsg.value = ''
+    try {
+      const certUrl = await generateCertificateFromPhoto(sourceImageUrl, CERT_TEMPLATE_URL)
+      flow.setAiCertificate(certUrl)
+      triggerCertPregen()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[AiCertificate] 生成失败：', msg)
+      certGenMsg.value = msg
+      certGenFailed.value = true
+    } finally {
+      isCertGenerating.value = false
+    }
+    return
+  }
+
+  // 无模板降级：仅生成卡通头像，供 Canvas 合成
   cartoonFailed.value = false
   try {
     const cartoonUrl = await generateCartoonAvatar(sourceImageUrl)
-    // 转 base64 避免证书导出时跨域问题（失败则保留原始 URL）
     let localUrl = cartoonUrl
     try { localUrl = await toDataUrl(cartoonUrl) } catch { /* keep original */ }
     flow.setCartoonAvatar(localUrl)
@@ -259,6 +351,11 @@ async function retryCartoon() {
   cartoonFailed.value = false
   cartoonErrorMsg.value = ''
   generateCartoonForCertificate(flow.sourceImageUrl ?? '')
+}
+
+async function retryCert() {
+  if (!flow.sourceImageUrl) return
+  generateCartoonForCertificate(flow.sourceImageUrl)
 }
 
 function loadImg(src: string): Promise<HTMLImageElement> {
@@ -417,7 +514,7 @@ onUnmounted(() => {
             <div class="particle-ascension pointer-events-none absolute inset-x-0 bottom-0 h-full" />
             <div class="particle-ascension particle-ascension--b pointer-events-none absolute inset-x-0 bottom-0 h-full" />
             <button type="button" class="group relative z-10 block w-full" :disabled="isDownloading" @click="downloadResultImage">
-              <img :src="resultImage || ''" alt="AI result" class="w-full object-cover" style="max-height:70vh;min-height:300px;" />
+              <img :src="resultImage || ''" alt="AI result" class="w-full object-cover" :style="resultImgStyle" />
               <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/0 transition-colors duration-200 group-hover:bg-black/35">
                 <Download class="h-8 w-8 text-white opacity-0 drop-shadow-lg transition-opacity duration-200 group-hover:opacity-100" />
                 <span class="font-mono text-xs tracking-wider text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -431,27 +528,55 @@ onUnmounted(() => {
 
       <div
         v-if="!teaserMode"
-        class="card-shell rounded-[30px] p-0 w-full"
+        class="card-shell rounded-[30px] p-0 w-full overflow-hidden"
       >
-        <!-- 卡通头像生成失败时显示重试入口 -->
-        <div v-if="isReady && cartoonFailed" class="cartoon-loading">
+        <!-- ── AI 证书路径（CERT_TEMPLATE_URL 已配置）──────────────────── -->
+        <!-- AI 证书已生成 -->
+        <img
+          v-if="isReady && aiCertUrl"
+          :src="aiCertUrl"
+          alt="游戏证书"
+          class="w-full block"
+        />
+        <!-- AI 证书生成中 -->
+        <div v-else-if="isReady && CERT_TEMPLATE_URL && isCertGenerating" class="cartoon-loading">
+          <div class="cartoon-loading-orb"></div>
+          <p class="cartoon-loading-text">正在生成游戏证书...</p>
+        </div>
+        <!-- AI 证书生成失败 -->
+        <div v-else-if="isReady && certGenFailed" class="cartoon-loading">
+          <div class="cartoon-error-icon">✕</div>
+          <p class="cartoon-loading-text">游戏证书生成失败</p>
+          <p v-if="certGenMsg" class="cartoon-error-detail">{{ certGenMsg }}</p>
+          <button type="button" class="cartoon-retry-btn" @click="retryCert">重新生成证书</button>
+        </div>
+        <!-- AI 证书等待中（模板已配置但尚未收到结果）-->
+        <div v-else-if="isReady && CERT_TEMPLATE_URL && !aiCertUrl" class="cartoon-loading">
+          <div class="cartoon-loading-orb"></div>
+          <p class="cartoon-loading-text">正在生成游戏证书...</p>
+        </div>
+
+        <!-- ── 降级路径（无模板，使用卡通头像 + Canvas 合成）──────────── -->
+        <!-- 卡通头像生成失败 -->
+        <div v-else-if="isReady && cartoonFailed" class="cartoon-loading">
           <div class="cartoon-error-icon">✕</div>
           <p class="cartoon-loading-text">卡通头像生成失败</p>
           <p v-if="cartoonErrorMsg" class="cartoon-error-detail">{{ cartoonErrorMsg }}</p>
           <button type="button" class="cartoon-retry-btn" @click="retryCartoon">重新生成</button>
         </div>
-        <!-- 卡通头像生成中时显示 loading 遮罩 -->
-        <div v-else-if="isReady && !certPhotoUrl" class="cartoon-loading">
-          <div class="cartoon-loading-orb"></div>
-          <p class="cartoon-loading-text">正在生成卡通头像...</p>
-        </div>
+        <!-- Canvas 合成证书 -->
         <AgentCertificate
-          v-else
+          v-else-if="isReady && certPhotoUrl"
           :codename="flow.certificateMeta.codename"
           :code="flow.certificateMeta.code"
           :joined-date="flow.certificateMeta.joinedDate"
           :image-url="certPhotoUrl || ''"
         />
+        <!-- 卡通头像生成中（降级兜底）-->
+        <div v-else class="cartoon-loading">
+          <div class="cartoon-loading-orb"></div>
+          <p class="cartoon-loading-text">正在生成卡通头像...</p>
+        </div>
       </div>
       <div v-else class="card-shell rounded-[30px] p-3 text-xs text-cyan-100/80">
         {{ zh.teaserHidden }}

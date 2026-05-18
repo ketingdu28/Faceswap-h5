@@ -6,9 +6,9 @@ import TerminalLoader from '../components/TerminalLoader.vue'
 import FaceSwapProcessLoader from '../components/FaceSwapProcessLoader.vue'
 import { useAgentFlowStore, type StyleOption } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
-import sceneImgA from '../assets/style-a.png'
-import sceneImgB from '../assets/style-b.png'
-import sceneImgC from '../assets/style-c.png'
+import sceneImgA from '../assets/style-a.webp'
+import sceneImgB from '../assets/style-b.webp'
+import sceneImgC from '../assets/style-c.webp'
 
 // ─── 每个场景的换脸模板图片 ─────────────────────────────────────────────────────
 // 使用方法：将图片放到 src/assets/，在下方对应场景数组里填写 import 即可。
@@ -96,6 +96,26 @@ const sceneTemplates: Partial<Record<StyleOption, [string | null, string | null,
    B: [templateB1, templateB2, templateB3],  // ← 魔法冰堡，图片就绪后填这行
    C: [templateC1, templateC2, templateC3],
 }
+
+// 模板图片的内联样式（Teleport 内 scoped CSS 不可靠，全部改为 inline style）
+// 修改圆角：borderRadius | 图片位置：objectPosition | 其余属性保证布局正常
+const templateImgStyle = {
+  width: '100%',
+  aspectRatio: '3 / 4',
+  display: 'block',
+  objectFit: 'cover' as const,
+  objectPosition: 'center 10%',   // 数值越大图片越靠下
+  borderRadius: '0px',            // 0px = 无圆角；改为 '12px' 等恢复圆角
+}
+
+// AI 换脸专用高清底图 URL（独立于预览缩略图，可在 .env.local 中单独配置）
+// 未配置时自动降级为预览缩略图的本地路径
+const env = import.meta.env as Record<string, string | undefined>
+const aiTemplateUrls: Record<StyleOption, [string, string, string]> = {
+  A: [env.VITE_AI_TEMPLATE_A1 ?? '', env.VITE_AI_TEMPLATE_A2 ?? '', env.VITE_AI_TEMPLATE_A3 ?? ''],
+  B: [env.VITE_AI_TEMPLATE_B1 ?? '', env.VITE_AI_TEMPLATE_B2 ?? '', env.VITE_AI_TEMPLATE_B3 ?? ''],
+  C: [env.VITE_AI_TEMPLATE_C1 ?? '', env.VITE_AI_TEMPLATE_C2 ?? '', env.VITE_AI_TEMPLATE_C3 ?? ''],
+}
 const selectedScene = computed(() => styles.find((s) => s.id === flow.selectedStyle) ?? null)
 
 // 两步流程：step1 选场景 → step2 选模板
@@ -131,11 +151,12 @@ function selectTemplate(templateIdx: number) {
   flow.setStyle(pendingScene.value)
   selectedTemplateIdx.value = templateIdx
 
-  // 将模板图片构造为完整公网 URL，作为换脸底图传给 API
-  // bundled asset 路径（如 /assets/template-b-1-XXXX.webp）+ origin → 公网可访问
-  const templateImgPath = sceneTemplates[pendingScene.value]?.[templateIdx] ?? null
+  // 优先使用 .env.local 中配置的高清 AI 底图 URL；
+  // 未配置时回退到本地预览缩略图路径（Vite 打包后自动加哈希，ensurePublicTargetUrl 会上传 ImgBB）
+  const aiUrl = aiTemplateUrls[pendingScene.value]?.[templateIdx]
+  const fallbackPath = sceneTemplates[pendingScene.value]?.[templateIdx] ?? null
   flow.setTemplateTargetUrl(
-    templateImgPath ? window.location.origin + templateImgPath : null
+    aiUrl || (fallbackPath ? window.location.origin + fallbackPath : null)
   )
 
   sceneConfirmed.value = true
@@ -520,6 +541,7 @@ async function startGeneration() {
                       v-if="sceneTemplates[pendingScene ?? 'A']?.[idx - 1]"
                       :src="sceneTemplates[pendingScene ?? 'A']![idx - 1]!"
                       class="template-img"
+                      :style="templateImgStyle"
                       :alt="`模板 ${['一','二','三'][idx - 1]}`"
                     />
                     <div v-else class="template-placeholder" aria-hidden="true">
@@ -1497,19 +1519,19 @@ async function startGeneration() {
 
 /* 白色遮罩占位图 — 替换时将此 div 换为 <img> 即可 */
 /* 实际模板图片（替换占位后生效） */
-.template-img {
+deep().template-img {
   width: 100%;
   aspect-ratio: 3 / 4;
-  border-radius: 12px;
+  border-radius: 0%;
   object-fit: cover;
-  object-position: center top;
+  object-position: center 10%;
   display: block;
 }
-
+ 
 .template-placeholder {
   width: 100%;
   aspect-ratio: 3 / 4;
-  border-radius: 12px;
+  border-radius: 0%;
   background: rgba(255, 255, 255, 0.88);
   display: flex;
   align-items: center;

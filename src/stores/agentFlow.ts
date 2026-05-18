@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { generateAgentCode, generateTimestamp } from '../services/agentMeta'
 
 const STORAGE_KEY = 'xmeta-agent-flow'
-const STORAGE_VERSION = 3   // 升至 v3：新增 cloudFileID
+const STORAGE_VERSION = 5   // 升至 v5：新增 aiCertificateUrl 持久化
 
 export type StyleOption = 'A' | 'B' | 'C'
 
@@ -20,6 +20,8 @@ interface PersistedState {
   resultImageUrl: string | null
   certificateMeta: CertificateMeta
   cloudFileID: string | null
+  cartoonAvatarUrl: string | null
+  aiCertificateUrl: string | null
 }
 
 interface VersionedPayload {
@@ -78,8 +80,10 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
   const cloudFileID = ref<string | null>(persisted?.cloudFileID ?? null)
   /** 用户选定的模板底图公网 URL（覆盖 STYLE_TARGET_URLS 默认值） */
   const templateTargetUrl = ref<string | null>(null)
-  /** 皮克斯卡通头像 URL（独立于换脸结果，用于证书展示） */
-  const cartoonAvatarUrl = ref<string | null>(null)
+  /** 皮克斯卡通头像 URL（独立于换脸结果，用于证书展示，持久化到 sessionStorage） */
+  const cartoonAvatarUrl = ref<string | null>(persisted?.cartoonAvatarUrl ?? null)
+  /** 即梦 AI 生成的完整游戏证书图片 URL（持久化到 sessionStorage） */
+  const aiCertificateUrl = ref<string | null>(persisted?.aiCertificateUrl ?? null)
 
   const canGenerate = computed(() => Boolean(sourceImageUrl.value && selectedStyle.value))
 
@@ -114,6 +118,10 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     cartoonAvatarUrl.value = url
   }
 
+  function setAiCertificate(url: string | null) {
+    aiCertificateUrl.value = url
+  }
+
   function resetSourceImage() {
     sourceImageUrl.value = null
     sourceImageBase64.value = null
@@ -121,17 +129,19 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     resultImageUrl.value = null
     templateTargetUrl.value = null
     cartoonAvatarUrl.value = null
+    aiCertificateUrl.value = null
     isGenerating.value = false
   }
 
   function resetResult() {
     resultImageUrl.value = null
+    cartoonAvatarUrl.value = null
+    aiCertificateUrl.value = null
     isGenerating.value = false
-    // 不清除 cloudFileID，允许重新生成时复用同一张已上传的图片
   }
 
   watch(
-    [sourceImageUrl, sourceImageBase64, selectedStyle, resultImageUrl, certificateMeta, cloudFileID],
+    [sourceImageUrl, sourceImageBase64, selectedStyle, resultImageUrl, certificateMeta, cloudFileID, cartoonAvatarUrl, aiCertificateUrl],
     () => {
       if (typeof window === 'undefined') return
       const payload: PersistedState = {
@@ -141,6 +151,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
         resultImageUrl: resultImageUrl.value,
         certificateMeta: certificateMeta.value,
         cloudFileID: cloudFileID.value,
+        cartoonAvatarUrl: cartoonAvatarUrl.value,
+        aiCertificateUrl: aiCertificateUrl.value,
       }
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, data: payload }))
     },
@@ -165,6 +177,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     setTemplateTargetUrl,
     cartoonAvatarUrl,
     setCartoonAvatar,
+    aiCertificateUrl,
+    setAiCertificate,
     resetSourceImage,
     resetResult,
   }

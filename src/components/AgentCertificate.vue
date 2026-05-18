@@ -9,6 +9,24 @@ const props = defineProps<{
   imageUrl: string
 }>()
 
+// ─── 证书照片定位 & 调色（inline style 绕过 scoped CSS 失效问题）────────────────
+// top    → 照片距证书顶部，值越大越靠下
+// left   → 照片距证书左边，值越大越靠右
+// width  → 照片宽度占证书宽度的比例
+// height → 照片高度占证书高度的比例
+// objectPosition → 裁切锚点："center top" 人脸靠上 / "center 30%" 往下偏移
+// filter → 调色：saturate 饱和度 / contrast 对比度 / brightness 亮度
+const bgImageStyle = {
+  position: 'absolute' as const,
+  top: '25%',
+  left: '25%',
+  width: '50%',
+  height: '50%',
+  objectFit: 'cover' as const,
+  objectPosition: 'center top',
+  zIndex: 1,
+}
+
 // 将外部图片转为 base64 data URL，解决 html2canvas 跨域截图空白问题
 const localImageUrl = ref('')
 
@@ -44,9 +62,9 @@ watch(() => props.imageUrl, async (url) => {
     class="glass-panel relative w-full p-0"
     data-certificate
   >
-    <div class="certificate-stage overflow-visible">
+    <div class="certificate-stage overflow-visible relative w-full">
       <!-- AI 换脸图：不加 crossorigin，避免 CDN 无 CORS 头时图片完全无法显示；canvas 导出由 ResultStage 独立处理 -->
-      <img :src="localImageUrl || imageUrl" alt="ai portrait" class="certificate-bg-image" />
+      <img :src="localImageUrl || imageUrl" alt="ai portrait" class="certificate-bg-image" :style="bgImageStyle" />
       <!-- 证书模板：叠在图片上方 -->
       <img
         :src="certificateTemplate"
@@ -88,15 +106,9 @@ watch(() => props.imageUrl, async (url) => {
  *    "center 20%"  = 水平居中 + 向下偏移 20%（脸在照片中段时使用）
  *    "50% 10%"     = 等同于 "center 10%"
  */
+/* 所有位置/圆角/调色参数已移入 script 的 bgImageStyle，此处修改无效 */
 .certificate-bg-image {
-  position: absolute;
-  top: 25%;      /* ← 调大：照片整体下移；调小：上移 */
-  left: 25%;       /* ← 调大：照片右移（如 "3%"） */
-  width: 50%;    /* ← 调大：照片变宽，覆盖更多左侧区域 */
-  height: 50%;   /* ← 调大：照片变高，向下延伸 */
-  object-fit: cover;
-  object-position: center top; /* ← 改 "center 20%" 可让脸部下移 */
-  z-index: 1;
+  display: block;
 }
 
 /* 证书模板：normal flow，height: auto 按原始比例撑开容器 */

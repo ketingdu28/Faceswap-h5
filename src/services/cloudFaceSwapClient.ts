@@ -4,14 +4,15 @@ import { FaceSwapServiceError } from './errors'
 import { uploadToImgBB } from './uploadToImgBB'
 import { generateAgentCode, generateTimestamp } from './agentMeta'
 
-// 同一次 session 中换脸和卡通头像会用到同一张用户原图，避免重复上传 ImgBB
-const _imgbbCache = new Map<string, string>()
+// 同一次 session 中换脸和证书生成会并行调用此函数，缓存 Promise 而非结果
+// 避免并发竞态：两个调用同时查缓存都 miss 时，只发起一次真正的上传
+const _imgbbCache = new Map<string, Promise<string>>()
 async function cachedUploadToImgBB(imageUrl: string): Promise<string> {
   const hit = _imgbbCache.get(imageUrl)
   if (hit) return hit
-  const url = await uploadToImgBB(imageUrl)
-  _imgbbCache.set(imageUrl, url)
-  return url
+  const promise = uploadToImgBB(imageUrl)
+  _imgbbCache.set(imageUrl, promise)
+  return promise
 }
 
 // ─── 云函数 Bridge（微信 WebView 注入） ────────────────────────────────────────
@@ -675,7 +676,7 @@ export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
   const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
   const prompt =
     getEnvString('VITE_JIMENG_CARTOON_PROMPT') ||
-    '学习皮克斯3D画风的动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。生成图片为人物的正面半身照，图片比例1：1，背景浅黄色底，只要完整人物'
+    '学习皮克斯3D画风的动漫风格，将照片中的人，生成为此风格的动漫头像。模仿形体，脸型，肤色、五官表情。生成图片为人物的正面半身照，图片比例1：1，背景白底，只要完整人物'
   // 与换脸保持一致的 size 配置，避免 API 拒绝不支持的分辨率
   const size = getEnvString('VITE_JIMENG_SIZE') || '1024x1024'
   const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
@@ -717,4 +718,134 @@ export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
   const url = payload.data?.[0]?.url ?? ''
   if (!url) throw new Error(`即梦未返回卡通头像 URL，响应：${JSON.stringify(payload).slice(0, 200)}`)
   return url
+}
+
+// ─── AI 游戏证书生成 ──────────────────────────────────────────────────────────
+
+/**
+ * 将卡通头像融合进游戏证书模板，生成完整的 AI 证书图。
+ *
+ * 参数说明：
+ *   cartoonAvatarUrl       - 卡通头像公网 URL（即梦卡通生成结果）
+ *   certificateTemplateUrl - 证书模板公网 URL（配置在 VITE_CERTIFICATE_TEMPLATE_URL）
+ *
+ * 调色提示词通过 VITE_JIMENG_CERT_PROMPT 覆盖。
+ */
+export async function generateCertificateWithAvatar(
+  cartoonAvatarUrl: string,
+  certificateTemplateUrl: string,
+): Promise<string> {
+  const baseUrl = getEnvString('VITE_JIMENG_BASE_URL') || 'https://ark.cn-beijing.volces.com'
+  const apiKey = getEnvString('VITE_JIMENG_API_KEY')
+  const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
+  const prompt =
+    getEnvString('VITE_JIMENG_CERT_PROMPT') ||
+    '将第二张图中的卡通人物头像自然融合到第一张游戏证书模板的头像预留区域中，保持证书整体构图、背景、文字、装饰和色彩完全不变，仅替换头像区域，融合边缘自然无痕'
+  // 证书独立 size，默认 1024x1024（小于换脸 2K），可单独通过 VITE_JIMENG_CERT_SIZE 调整
+  const size = getEnvString('VITE_JIMENG_CERT_SIZE') || '1024x1024'
+  const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
+
+  if (!apiKey) throw new Error('未配置 VITE_JIMENG_API_KEY')
+  if (!certificateTemplateUrl) throw new Error('未配置证书模板 URL（VITE_CERTIFICATE_TEMPLATE_URL）')
+
+  // 确保两张图都是即梦服务器可访问的公网 HTTP URL
+  const templateUrl = certificateTemplateUrl.startsWith('http')
+    ? certificateTemplateUrl
+    : await cachedUploadToImgBB(certificateTemplateUrl)
+
+  const avatarUrl = cartoonAvatarUrl.startsWith('http')
+    ? cartoonAvatarUrl
+    : await cachedUploadToImgBB(cartoonAvatarUrl)
+
+  const response = await withTimeout(
+    fetch(`${baseUrl}/api/v3/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        image: [templateUrl, avatarUrl],
+        size,
+        output_format: 'png',
+        watermark: false,
+      }),
+    }),
+    timeoutMs,
+  )
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '')
+    throw new Error(`即梦证书生成失败 HTTP ${response.status}：${errBody.slice(0, 200)}`)
+  }
+
+  const payload = (await response.json()) as { data?: Array<{ url?: string }> }
+  const url = payload.data?.[0]?.url ?? ''
+  if (!url) throw new Error(`即梦未返回证书图片 URL，响应：${JSON.stringify(payload).slice(0, 200)}`)
+  return url
+}
+
+// ─── 一体化证书生成（单步：从原始照片直接生成含皮克斯头像的证书）──────────────
+
+/**
+ * 从用户原始照片一步生成含皮克斯风格头像的游戏证书。
+ * 替代原来的两步流程（先生成卡通头像 → 再融合证书），减少 API 调用次数。
+ *
+ * image[0] = 证书模板，image[1] = 用户照片
+ * 可通过 VITE_JIMENG_CERT_ONE_SHOT_PROMPT 覆盖提示词。
+ */
+export async function generateCertificateFromPhoto(
+  photoUrl: string,
+  certificateTemplateUrl: string,
+): Promise<string> {
+  const baseUrl = getEnvString('VITE_JIMENG_BASE_URL') || 'https://ark.cn-beijing.volces.com'
+  const apiKey = getEnvString('VITE_JIMENG_API_KEY')
+  const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
+  const prompt =
+    getEnvString('VITE_JIMENG_CERT_ONE_SHOT_PROMPT') ||
+    '参考第二张图中人物的面部特征，将其转换为皮克斯（Pixar）3D动画风格的卡通头像，并自然融合到第一张游戏证书模板的头像预留区域中。要求：1. 保留人物真实面部特征（脸型、五官、肤色），不改变性别和年龄感。2. 采用皮克斯电影级3D渲染质感，皮肤细腻，眼睛明亮有神。3. 头像完整显示在预留区域内，融合边缘自然无痕。4. 严格保持证书其余所有内容（背景、文字、徽章、装饰图案、整体配色）完全不变。'
+  const size = getEnvString('VITE_JIMENG_CERT_SIZE') || '2K'
+  const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
+
+  if (!apiKey) throw new Error('未配置 VITE_JIMENG_API_KEY')
+  if (!certificateTemplateUrl) throw new Error('未配置证书模板 URL（VITE_CERTIFICATE_TEMPLATE_URL）')
+
+  const templateUrl = certificateTemplateUrl.startsWith('http')
+    ? certificateTemplateUrl
+    : await cachedUploadToImgBB(certificateTemplateUrl)
+
+  const userPhotoUrl = photoUrl.startsWith('http')
+    ? photoUrl
+    : await cachedUploadToImgBB(photoUrl)
+
+  const response = await withTimeout(
+    fetch(`${baseUrl}/api/v3/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        image: [templateUrl, userPhotoUrl],
+        size,
+        output_format: 'png',
+        watermark: false,
+      }),
+    }),
+    timeoutMs,
+  )
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '')
+    throw new Error(`即梦证书生成失败 HTTP ${response.status}：${errBody.slice(0, 200)}`)
+  }
+
+  const payload2 = (await response.json()) as { data?: Array<{ url?: string }> }
+  const certUrl = payload2.data?.[0]?.url ?? ''
+  if (!certUrl) throw new Error(`即梦未返回证书图片 URL，响应：${JSON.stringify(payload2).slice(0, 200)}`)
+  return certUrl
 }
