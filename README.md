@@ -1,15 +1,16 @@
 # XMeta Agent H5
 
-独立 Vue 3 + Vite + Tailwind 的移动端 H5 AI 换脸工具示例，包含：
+Vue 3 + Vite + Tailwind CSS 移动端 H5，集成即梦（火山引擎 Doubao Seedream）AI 图片生成，实现：
 
-- `PreStage`：上传、风格选择、启动换脸
-- `ResultStage`：生成态日志滚动、结果展示、证书导出（`html2canvas`）
+- **AI 换脸**：用户上传照片 → 与选定的 XR 场景海报融合
+- **皮克斯证书一体化生成**：单次 API 调用将用户照片转换为皮克斯 3D 风格头像，并自然融合进游戏荣誉证书
+- 姿势引导 + 风格选择（A / B / C 三套场景）
 - Pinia 跨页面状态同步 + `sessionStorage` 持久化
-- 可替换云函数调用封装（`mock` / `cloud`）
 
 | 界面一：上传图片 | 界面二：生成结果 |
 | :---: | :---: |
 | <img width="350" src="https://github.com/user-attachments/assets/65c5a7fb-5fcf-4093-a6c1-93bdc725147a" /> | <img width="350" src="https://github.com/user-attachments/assets/a81e1952-a65f-4096-b28c-a841f6da56a8" /> |
+
 ## 启动
 
 ```bash
@@ -19,116 +20,126 @@ npm run dev
 
 ## 环境变量
 
-复制 `.env.example` 为 `.env` 并按需调整：
+复制并创建 `.env.local`（不提交 Git），修改后重启 dev server 生效：
 
-```bash
-VITE_API_MODE=mock   # mock | cloud
-VITE_APP_MODE=FULL   # FULL | TEASER
-VITE_CLOUD_TIMEOUT_MS=20000
-VITE_CLOUD_RETRY_COUNT=2
-VITE_CLOUD_PROVIDER=invoker   # invoker | piapi
-VITE_PIAPI_BASE_URL=
-VITE_PIAPI_API_KEY=
-VITE_PIAPI_ENDPOINT=/v1/task
-VITE_PIAPI_MODEL=
-VITE_PIAPI_RESULT_PATH=
-```
-
-- `TEASER` 模式：隐藏证书导出能力，仅保留上传与换脸结果浏览。
-
-## 后端接入位置
-
-- `src/services/cloudFaceSwapClient.ts`
-
-当前支持三种 `VITE_CLOUD_PROVIDER`：
-
-- `invoker`：通过浏览器注入的 `window.__XmetaCloudInvoke` 调用后端
-- `backend`：直接调用通用后端任务接口，并支持 task submit/poll 模式
-- `piapi`：直接调用第三方 PiAPI 端点（仅在后台允许时使用）
-
-如果你希望 H5 与小程序共享同一个后端接口，请使用 `backend` 模式，并配置：
+### 基础配置
 
 ```bash
 VITE_API_MODE=cloud
+VITE_CLOUD_PROVIDER=jimeng        # 主要 provider，可切换为 piapi / backend / invoker
+VITE_APP_MODE=FULL                # FULL | TEASER（TEASER 模式隐藏证书导出）
+VITE_POSE_GUIDE=1                 # 1=开启姿势引导，0=关闭
+```
+
+### 即梦（火山引擎 Ark / Doubao Seedream）换脸
+
+```bash
+VITE_JIMENG_BASE_URL=/jimeng-proxy           # 本地走 Vite 代理；生产走 vercel.json rewrite
+VITE_JIMENG_API_KEY=your_api_key_here        # 火山引擎 ARK API Key（⚠️ 前端可见，建议限制额度）
+VITE_JIMENG_MODEL=doubao-seedream-5-0-260128 # 模型 ID
+VITE_JIMENG_SIZE=2K                          # 换脸图片尺寸（最小 3686400 像素，推荐 2K）
+VITE_JIMENG_TIMEOUT_MS=120000                # 超时（毫秒），建议 ≥ 90000
+
+# 换脸提示词（留空使用代码内默认值）
+VITE_JIMENG_PROMPT=海报中已经用白色区域遮盖了需要替换的人物面部位置...
+```
+
+### 换脸模板图（各风格，必须是可公网访问的 URL）
+
+```bash
+# 风格兜底图（未选具体模板时使用）
+VITE_TARGET_URL_A=https://your-cdn.com/style-a.png
+VITE_TARGET_URL_B=https://your-cdn.com/style-b.png
+VITE_TARGET_URL_C=https://your-cdn.com/style-c.png
+
+# AI 换脸专用高清底图（A1-A3 / B1-B3 / C1-C3，留空自动降级到缩略图）
+VITE_AI_TEMPLATE_A1=https://your-cdn.com/template-a1.png
+# ... 其余同理
+```
+
+### 皮克斯证书一体化生成
+
+```bash
+# 证书模板图（⚠️ 必须托管在即梦服务器可稳定访问的 CDN，推荐阿里云 OSS / 腾讯 COS）
+# 留空则降级为 Canvas 合成模式（不使用 AI 生成证书）
+VITE_CERTIFICATE_TEMPLATE_URL=https://your-cdn.com/certificate-template.png
+
+# 证书图片尺寸（独立于换脸尺寸，2K = 约 2048×2048，满足最低像素要求）
+VITE_JIMENG_CERT_SIZE=2K
+
+# 一体化提示词：单次 API 调用完成「皮克斯头像生成 + 融合证书」
+# image[0]=证书模板  image[1]=用户照片（留空使用代码内默认值）
+VITE_JIMENG_CERT_ONE_SHOT_PROMPT=参考第二张图中人物的面部特征，将其转换为皮克斯（Pixar）3D动画风格的卡通头像，并自然融合到第一张游戏证书模板的头像预留区域中。要求：1. 保留人物真实面部特征（脸型、五官、肤色），不改变性别和年龄感。2. 采用皮克斯电影级3D渲染质感，皮肤细腻，眼睛明亮有神。3. 头像完整显示在预留区域内，融合边缘自然无痕。4. 严格保持证书其余所有内容（背景、文字、徽章、装饰图案、整体配色）完全不变。
+```
+
+## 证书生成流程
+
+```
+用户照片 + 证书模板（VITE_CERTIFICATE_TEMPLATE_URL）
+        │
+        ▼  单次 API 调用（generateCertificateFromPhoto）
+即梦 Doubao Seedream
+        │
+        ▼
+含皮克斯 3D 头像的完整证书图片
+```
+
+**降级逻辑**：`VITE_CERTIFICATE_TEMPLATE_URL` 为空时，自动使用 HTML5 Canvas 将换脸结果合成到本地证书模板。
+
+## Vercel 部署
+
+`vercel.json` 已配置 `/jimeng-proxy` rewrite，无需额外代理服务。
+
+**必须在 Vercel Dashboard → Settings → Environment Variables 中设置以下变量**（`.env.local` 不会上传）：
+
+| 变量名 | 说明 |
+|--------|------|
+| `VITE_JIMENG_API_KEY` | 火山引擎 ARK API Key |
+| `VITE_JIMENG_SIZE` | `2K`（不可使用 `1024x1024`，低于即梦最小像素限制） |
+| `VITE_JIMENG_CERT_SIZE` | `2K` |
+| `VITE_CERTIFICATE_TEMPLATE_URL` | 证书模板公网 URL（**不可使用 ImgBB**，即梦国内服务器无法稳定访问） |
+| `VITE_JIMENG_CERT_ONE_SHOT_PROMPT` | 一体化证书生成提示词 |
+| `VITE_TARGET_URL_A/B/C` | 三套风格兜底图 |
+| `VITE_AI_TEMPLATE_*` | 换脸高清底图（可选） |
+
+设置后在 Vercel 触发 **Redeploy** 即可生效，无需重新推送代码。
+
+## 其他 Provider（可选）
+
+### PiAPI
+
+```bash
+VITE_CLOUD_PROVIDER=piapi
+VITE_PIAPI_BASE_URL=https://api.piapi.ai
+VITE_PIAPI_API_KEY=your_key
+```
+
+### 后端代理模式
+
+```bash
 VITE_CLOUD_PROVIDER=backend
 VITE_CLOUD_BASE_URL=https://api.example.com
 VITE_CLOUD_ENDPOINT=/faceSwapAction
 ```
 
-当后端返回 `taskId` 时，H5 会自动进入轮询模式；当后端直接返回 `resultUrl` 时，H5 会跳过轮询。
+后端返回 `taskId` 时自动进入轮询；直接返回 `resultUrl` 时跳过轮询。
 
-你也可以继续使用 `invoker`：
+### 小程序 WebView 注入模式
 
 ```ts
-window.__XmetaCloudInvoke = async ({ name, data }) => {
-  return {
-    ok: true,
-    data: {
-      resultUrl: 'https://your-temp-authorized-url',
-      codename: 'AGENT_X',
-      code: 'XM-2026-321',
-      joinedDate: '2026-04-20',
-    },
-  }
-}
+window.__XmetaCloudInvoke = async ({ name, data }) => ({
+  ok: true,
+  data: { resultUrl: 'https://your-authorized-url' },
+})
 ```
 
-对于 `backend` 模式，额外配置项：
+## 后端接入位置
 
-- `VITE_CLOUD_TASK_POLL_INTERVAL_MS=2000`
-- `VITE_CLOUD_TASK_POLL_ATTEMPTS=25`
-- `VITE_CLOUD_RESULT_PATH=` 可用于从后端响应中提取图片链接（例如 `data.output[0]`）
-
-此外，`generateFaceSwap` 已支持 `onProgress` 回调，可用于驱动日志滚动与进度条。
-
-## Mock 切 Cloud 最小配置清单
-
-1. 在 `.env` 中切换：
-
-```bash
-VITE_API_MODE=cloud
-VITE_CLOUD_TIMEOUT_MS=20000
-VITE_CLOUD_RETRY_COUNT=2
-```
-
-2. 在应用启动前注入 `window.__XmetaCloudInvoke`（例如 `main.ts` 里或独立 sdk 引导文件）。
-3. 确保云函数返回可导出图片链接（支持 CORS 或临时授权 URL）。
-4. 若返回结构不是 `{ ok, data: { resultUrl } }`，也可使用 `success/code/data.url/data.result.resultUrl` 兼容格式。
-5. 如出现跨域导出失败，优先改为云端返回临时可访问链接，或前置转 base64。
-
-## 使用 PiAPI（可选）
-
-当你想直接走 PiAPI 而不是 `window.__XmetaCloudInvoke` 时：
-
-1. `.env` 设置：
-
-```bash
-VITE_API_MODE=cloud
-VITE_CLOUD_PROVIDER=piapi
-VITE_PIAPI_BASE_URL=https://your-piapi-host
-VITE_PIAPI_API_KEY=your_piapi_key
-VITE_PIAPI_ENDPOINT=/v1/task
-VITE_PIAPI_MODEL=your_model_optional
-VITE_PIAPI_RESULT_PATH=
-```
-
-2. 说明：
-- 默认会尝试从这些字段提取结果图 URL：`resultUrl`、`url`、`data.resultUrl`、`data.url`、`result.resultUrl`、`output[0]`。
-- 如果你的 PiAPI 返回结构不同，可设置 `VITE_PIAPI_RESULT_PATH`（例如 `data.result.image`）。
-- 浏览器直连 PiAPI 可能遇到 CORS，生产环境建议通过后端代理。
-
-## 导出质量策略
-
-证书导出在 `ResultStage` 中默认启用：
-
-- `scale >= 2`
-- `useCORS: true`
-- `await document.fonts.ready`
-- 高频失败自动降级到 `scale: 1` 并给出跨域提示
-
-用于提升细字清晰度与减少字体回退问题。
+- 换脸 + 证书生成：`src/services/cloudFaceSwapClient.ts`
+- 状态管理：`src/stores/agentFlow.ts`
+- 结果页流程：`src/pages/ResultStage.vue`
 
 ## 移动端兼容说明
 
-- iOS Safari 推荐用户先点击“授权并启动相机”
+- iOS Safari 推荐用户先点击"授权并启动相机"
 - 页面底部使用 `env(safe-area-inset-bottom)` 防止按钮被系统栏遮挡
