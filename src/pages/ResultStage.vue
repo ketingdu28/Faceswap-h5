@@ -7,6 +7,7 @@ import { useAgentFlowStore } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
 import { generateCartoonAvatar, generateCertificateFromPhoto } from '../services/cloudFaceSwapClient'
 import { FaceSwapServiceError } from '../services/errors'
+import textOverlay from '../assets/certificate-template.png'
 
 const router = useRouter()
 const flow = useAgentFlowStore()
@@ -144,59 +145,26 @@ const CERT_TEMPLATE_URL = (import.meta.env.VITE_CERTIFICATE_TEMPLATE_URL as stri
 const cachedCertBlob = ref<Blob | null>(null)
 
 async function buildCertBlob(): Promise<Blob | null> {
-  // 优先使用即梦 AI 生成的完整证书图，直接 fetch 返回无需 Canvas 合成
-  if (aiCertUrl.value) {
-    try {
-      const src = aiCertUrl.value.startsWith('data:') || aiCertUrl.value.startsWith('blob:')
-        ? aiCertUrl.value
-        : await toDataUrl(aiCertUrl.value)
-      const res = await fetch(src)
-      return res.ok ? await res.blob() : null
-    } catch { return null }
-  }
-
-  let photoSrc = certPhotoUrl.value
-  if (!photoSrc) return null
+  const baseSrc = aiCertUrl.value || certPhotoUrl.value
+  if (!baseSrc) return null
   try {
-    // 先确保照片是 data: URL，否则 loadImg 的 crossOrigin='anonymous'
-    // 遇到无 CORS 头的 CDN 会直接失败（同 exportCertificate 旧逻辑）
-    if (!photoSrc.startsWith('data:') && !photoSrc.startsWith('blob:')) {
-      photoSrc = await toDataUrl(photoSrc) // 直连 CORS 或走 /api/proxy-image
-    }
-    const templateSrc = CERT_TEMPLATE_URL
-    if (!templateSrc) return null
-    const [templateImg, photoImg] = await Promise.all([
-      loadImg(templateSrc),
-      loadImg(photoSrc),
+    const resolvedBase = baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')
+      ? baseSrc
+      : await toDataUrl(baseSrc).catch(() => baseSrc)
+    const [baseImg, overlayImg] = await Promise.all([
+      loadImg(resolvedBase),
+      loadImg(textOverlay),
     ])
-    const W = templateImg.naturalWidth
-    const H = templateImg.naturalHeight
+    const W = baseImg.naturalWidth
+    const H = baseImg.naturalHeight
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#050c1d'
-    ctx.fillRect(0, 0, W, H)
-    const destX = W * 0.25
-    const destY = H * 0.25
-    const destW = W * 0.50
-    const destH = H * 0.50
-    const imgAspect = photoImg.naturalWidth / photoImg.naturalHeight
-    const destAspect = destW / destH
-    let sx = 0, sy = 0
-    let sw = photoImg.naturalWidth, sh = photoImg.naturalHeight
-    if (imgAspect > destAspect) {
-      sw = Math.round(photoImg.naturalHeight * destAspect)
-      sx = Math.round((photoImg.naturalWidth - sw) / 2)
-    } else {
-      sh = Math.round(photoImg.naturalWidth / destAspect)
-    }
-    // 对 AI 生成图提升饱和度和对比度，修正偏色、灰暗问题
-    ctx.filter = 'saturate(180%) contrast(115%) brightness(98%)'
-    ctx.drawImage(photoImg, sx, sy, sw, sh, destX, destY, destW, destH)
-    // 重置滤镜，防止叠加到证书模板层
-    ctx.filter = 'none'
-    ctx.drawImage(templateImg, 0, 0, W, H)
+    // Layer 1（底层）：AI 皮克斯肖像，从 (0,0) 全尺寸绘制
+    ctx.drawImage(baseImg, 0, 0, W, H)
+    // Layer 2（顶层）：纯文字透明遮罩，与底图严格等尺寸叠加
+    ctx.drawImage(overlayImg, 0, 0, W, H)
     return await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, 'image/jpeg', 0.92)
     })
@@ -533,12 +501,10 @@ onUnmounted(() => {
         class="card-shell rounded-[30px] p-0 w-full overflow-hidden"
       >
         <!-- ── AI 证书路径（CERT_TEMPLATE_URL 已配置）──────────────────── -->
-        <!-- AI 证书已生成 -->
-        <img
+        <!-- AI 证书已生成：底层 AI 肖像 + 顶层文字透明遮罩 -->
+        <AgentCertificate
           v-if="isReady && aiCertUrl"
-          :src="aiCertUrl"
-          alt="游戏证书"
-          class="w-full block"
+          :image-url="aiCertUrl"
         />
         <!-- AI 证书生成中 -->
         <div v-else-if="isReady && CERT_TEMPLATE_URL && isCertGenerating" class="cartoon-loading">
@@ -566,12 +532,9 @@ onUnmounted(() => {
           <p v-if="cartoonErrorMsg" class="cartoon-error-detail">{{ cartoonErrorMsg }}</p>
           <button type="button" class="cartoon-retry-btn" @click="retryCartoon">重新生成</button>
         </div>
-        <!-- Canvas 合成证书 -->
+        <!-- Canvas 合成证书（降级：无 AI 证书时用卡通头像兜底） -->
         <AgentCertificate
           v-else-if="isReady && certPhotoUrl"
-          :codename="flow.certificateMeta.codename"
-          :code="flow.certificateMeta.code"
-          :joined-date="flow.certificateMeta.joinedDate"
           :image-url="certPhotoUrl || ''"
         />
         <!-- 卡通头像生成中（降级兜底）-->
@@ -621,7 +584,7 @@ onUnmounted(() => {
     radial-gradient(circle at top, rgba(255, 218, 170, 0.06) 0%, rgba(255, 218, 170, 0) 28%),
     radial-gradient(circle at 78% 18%, rgba(182, 122, 255, 0.08) 0%, rgba(182, 122, 255, 0) 24%),
     linear-gradient(135deg, rgba(9, 24, 48, 0.16) 0%, rgba(15, 52, 94, 0.14) 100%),
-    url('/magic-bg.png') center center / cover no-repeat;
+    url('/magic-bg.webp') center center / cover no-repeat;
 }
 
 

@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
       class="terminal-loader"
       :class="{ 'is-exploding': exploding }"
     >
-      <img class="loader-bg-image" src="/magic-bg.png" alt="" loading="lazy" decoding="async" />
+      <img class="loader-bg-image" src="/magic-bg.webp" alt="" loading="lazy" decoding="async" />
       <div class="loader-bg-mask" />
       <div
         v-for="layer in particleLayers"

@@ -1,76 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
-import certificateTemplate from '../assets/certificate-template.webp'
+import textOverlay from '../assets/certificate-template.png'
 
-const props = defineProps<{
-  codename: string
-  code: string
-  joinedDate: string
+defineProps<{
   imageUrl: string
 }>()
-
-// ─── 证书照片定位 & 调色（inline style 绕过 scoped CSS 失效问题）────────────────
-// top    → 照片距证书顶部，值越大越靠下
-// left   → 照片距证书左边，值越大越靠右
-// width  → 照片宽度占证书宽度的比例
-// height → 照片高度占证书高度的比例
-// objectPosition → 裁切锚点："center top" 人脸靠上 / "center 30%" 往下偏移
-// filter → 调色：saturate 饱和度 / contrast 对比度 / brightness 亮度
-const bgImageStyle = {
-  position: 'absolute' as const,
-  top: '25%',
-  left: '25%',
-  width: '50%',
-  height: '50%',
-  objectFit: 'cover' as const,
-  objectPosition: 'center top',
-  zIndex: 1,
-}
-
-// 将外部图片转为 base64 data URL，解决 html2canvas 跨域截图空白问题
-const localImageUrl = ref('')
-
-async function toDataUrl(url: string): Promise<string> {
-  if (!url) return ''
-  // data: / blob: URL 已在本地，无需再 fetch（fetch data: 加 mode:'cors' 在部分浏览器会抛错）
-  if (url.startsWith('data:') || url.startsWith('blob:')) return url
-  try {
-    const res = await fetch(url, { mode: 'cors' })
-    const blob = await res.blob()
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(blob)
-    })
-  } catch {
-    return url // 转换失败时降级使用原始 URL
-  }
-}
-
-onMounted(async () => {
-  localImageUrl.value = await toDataUrl(props.imageUrl)
-})
-
-watch(() => props.imageUrl, async (url) => {
-  localImageUrl.value = await toDataUrl(url)
-})
 </script>
 
 <template>
-  <section
-    class="glass-panel relative w-full p-0"
-    data-certificate
-  >
-    <div class="certificate-stage overflow-visible relative w-full">
-      <!-- AI 换脸图：不加 crossorigin，避免 CDN 无 CORS 头时图片完全无法显示；canvas 导出由 ResultStage 独立处理 -->
-      <img :src="localImageUrl || imageUrl" alt="ai portrait" class="certificate-bg-image" :style="bgImageStyle" />
-      <!-- 证书模板：叠在图片上方 -->
-      <img
-        :src="certificateTemplate"
-        alt="certificate template"
-        class="certificate-template-layer"
-      />
+  <section class="glass-panel relative w-full p-0" data-certificate>
+    <div class="cert-stage">
+      <!-- Layer 1 (底层): AI 生成的皮克斯肖像 + 背景 -->
+      <img :src="imageUrl" alt="ai portrait" class="cert-layer" />
+      <!-- Layer 2 (顶层): 纯文字透明遮罩，与底图严格等尺寸叠加 -->
+      <img :src="textOverlay" alt="" class="cert-layer cert-layer--overlay" aria-hidden="true" />
     </div>
   </section>
 </template>
@@ -87,36 +29,25 @@ watch(() => props.imageUrl, async (url) => {
   backdrop-filter: blur(12px);
 }
 
-/* 高度由模板图片原始比例撑开，不再用固定 aspect-ratio */
-.certificate-stage {
+.cert-stage {
   position: relative;
   width: 100%;
 }
 
-/*
- * 换脸照片定位参数说明（对应下方 canvas 导出坐标，修改时需同步 ResultStage.vue）：
- *
- *  top      → 照片距证书顶部的百分比，值越大照片越靠下
- *  left     → 照片距证书左边的百分比，0 表示紧贴左边
- *  width    → 照片宽度占证书宽度的百分比（对齐拱形宽度）
- *  height   → 照片高度占证书高度的百分比（对齐拱形高度）
- *
- *  object-position → "水平 垂直" 控制照片裁切锚点
- *    "center top"  = 水平居中 + 顶部对齐（适合全身照，脸在上方）
- *    "center 20%"  = 水平居中 + 向下偏移 20%（脸在照片中段时使用）
- *    "50% 10%"     = 等同于 "center 10%"
- */
-/* 所有位置/圆角/调色参数已移入 script 的 bgImageStyle，此处修改无效 */
-.certificate-bg-image {
+/* 底层：normal flow 撑开容器高度 */
+.cert-layer {
   display: block;
-}
-
-/* 证书模板：normal flow，height: auto 按原始比例撑开容器 */
-.certificate-template-layer {
-  display: block;
-  position: relative;
   width: 100%;
   height: auto;
-  z-index: 2;
+}
+
+/* 顶层：绝对定位覆盖底层，宽高 100% 严格对齐 */
+.cert-layer--overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
 }
 </style>

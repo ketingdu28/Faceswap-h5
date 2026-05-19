@@ -790,11 +790,54 @@ export async function generateCertificateWithAvatar(
 // ─── 一体化证书生成（单步：从原始照片直接生成含皮克斯头像的证书）──────────────
 
 /**
- * 从用户原始照片一步生成含皮克斯风格头像的游戏证书。
- * 替代原来的两步流程（先生成卡通头像 → 再融合证书），减少 API 调用次数。
+ * 将蒙版图片路径解析为即梦 API 可访问的公网 URL。
  *
- * image[0] = 证书模板，image[1] = 用户照片
- * 可通过 VITE_JIMENG_CERT_ONE_SHOT_PROMPT 覆盖提示词。
+ * - 已是 http(s) URL → 直接使用
+ * - 以 "/" 开头的相对路径（public/ 静态资源）→ 拼接 window.location.origin，
+ *   fetch 获取内容后上传 ImgBB，结果缓存至 sessionStorage 避免重复上传。
+ * - 空值 → 返回 undefined（不传蒙版）
+ */
+async function resolveMaskUrl(maskPath: string): Promise<string | undefined> {
+  if (!maskPath) return undefined
+  if (maskPath.startsWith('http')) return maskPath
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const fullUrl = `${origin}${maskPath.startsWith('/') ? maskPath : `/${maskPath}`}`
+
+  const cacheKey = `xm_mask_${maskPath}`
+  try {
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) return cached
+  } catch { /* ignore */ }
+
+  const res = await fetch(fullUrl)
+  if (!res.ok) throw new Error(`无法获取蒙版图片 ${fullUrl}：HTTP ${res.status}`)
+  const blob = await res.blob()
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+  const publicUrl = await uploadToImgBB(base64)
+  try { sessionStorage.setItem(cacheKey, publicUrl) } catch { /* ignore */ }
+  return publicUrl
+}
+
+/**
+ * 从用户原始照片生成含皮克斯风格头像的游戏证书。
+ *
+ * 【有蒙版时 — 两步 inpainting 模式】
+ *   蒙版约定：白色 = 允许 AI 修改的区域（头像预留区），黑色 = 保持不变（文字/背景等）
+ *   Step 1：用用户照片生成皮克斯头像（独立 API 调用）
+ *   Step 2：以证书模板为底图做局部重绘，image[0]=模板（底图）、image[1]=皮克斯头像（参考），
+ *           mask 精确标记头像区域为白色，文字区自动保留
+ *
+ * 【无蒙版时 — 单步多参考图模式】
+ *   image[0]=证书模板，image[1]=用户照片，依赖 prompt 保护文字区域
+ *
+ * 蒙版路径通过 VITE_JIMENG_CERT_MASK_URL 配置（public/ 相对路径或完整 CDN URL）。
+ * 提示词通过 VITE_JIMENG_CERT_ONE_SHOT_PROMPT / VITE_JIMENG_CERT_INPAINT_PROMPT 覆盖。
  */
 export async function generateCertificateFromPhoto(
   photoUrl: string,
@@ -803,22 +846,55 @@ export async function generateCertificateFromPhoto(
   const baseUrl = getEnvString('VITE_JIMENG_BASE_URL') || 'https://ark.cn-beijing.volces.com'
   const apiKey = getEnvString('VITE_JIMENG_API_KEY')
   const model = getEnvString('VITE_JIMENG_MODEL') || 'doubao-seedream-5-0-260128'
-  const prompt =
-    getEnvString('VITE_JIMENG_CERT_ONE_SHOT_PROMPT') ||
-    '参考第二张图中人物的面部特征，将其转换为皮克斯（Pixar）3D动画风格的卡通头像，并自然融合到第一张游戏证书模板的头像预留区域中。要求：1. 保留人物真实面部特征（脸型、五官、肤色），不改变性别和年龄感。2. 采用皮克斯电影级3D渲染质感，皮肤细腻，眼睛明亮有神。3. 头像完整显示在预留区域内，融合边缘自然无痕。4. 严格保持证书其余所有内容（背景、文字、徽章、装饰图案、整体配色）完全不变。'
   const size = getEnvString('VITE_JIMENG_CERT_SIZE') || '2K'
   const timeoutMs = getEnvNumber('VITE_JIMENG_TIMEOUT_MS', 120000)
+  const maskPath = getEnvString('VITE_JIMENG_CERT_MASK_URL')
 
   if (!apiKey) throw new Error('未配置 VITE_JIMENG_API_KEY')
   if (!certificateTemplateUrl) throw new Error('未配置证书模板 URL（VITE_CERTIFICATE_TEMPLATE_URL）')
 
-  const templateUrl = certificateTemplateUrl.startsWith('http')
-    ? certificateTemplateUrl
-    : await cachedUploadToImgBB(certificateTemplateUrl)
+  const [templateUrl, userPhotoUrl, maskImageUrl] = await Promise.all([
+    certificateTemplateUrl.startsWith('http')
+      ? Promise.resolve(certificateTemplateUrl)
+      : cachedUploadToImgBB(certificateTemplateUrl),
+    photoUrl.startsWith('http')
+      ? Promise.resolve(photoUrl)
+      : cachedUploadToImgBB(photoUrl),
+    resolveMaskUrl(maskPath),
+  ])
 
-  const userPhotoUrl = photoUrl.startsWith('http')
-    ? photoUrl
-    : await cachedUploadToImgBB(photoUrl)
+  let imageRefs: string[]
+  let prompt: string
+
+  if (maskImageUrl) {
+    // ── 两步 inpainting 模式 ──────────────────────────────────────────────────
+    // 多参考图模式（image 为数组）下 mask_image_url 会被 API 忽略；
+    // 正确做法：先生成皮克斯头像，再以模板为底图、头像为参考做局部重绘。
+    console.log('[Certificate] 蒙版模式：Step 1 生成皮克斯头像...')
+    const cartoonUrl = await generateCartoonAvatar(userPhotoUrl)
+    console.log('[Certificate] 蒙版模式：Step 2 inpainting，mask:', maskImageUrl)
+    imageRefs = [templateUrl, cartoonUrl]
+    prompt =
+      getEnvString('VITE_JIMENG_CERT_INPAINT_PROMPT') ||
+      '将右侧参考图中的皮克斯3D风格卡通人物头像，精准嵌入左侧证书模板蒙版标记的白色区域中。要求：1. 头像完整显示在白色区域内，与边界自然融合，无拼接感。2. 蒙版黑色区域内的所有内容（文字、背景、徽章、装饰图案）严格保持不变。3. 特别保护「体验项目」、「体验日期」、「纪念编号」三行文字标签及其填写区域，不得覆盖或模糊。4. 整体风格与证书协调统一。'
+  } else {
+    // ── 单步多参考图模式 ──────────────────────────────────────────────────────
+    console.log('[Certificate] 单步模式：无蒙版，依赖提示词保护文字区域')
+    imageRefs = [templateUrl, userPhotoUrl]
+    prompt =
+      getEnvString('VITE_JIMENG_CERT_ONE_SHOT_PROMPT') ||
+      '参考第二张图中人物的面部特征，将其转换为皮克斯（Pixar）3D动画风格的卡通头像，并自然融合到第一张游戏证书模板的头像预留区域中。要求：1. 保留人物真实面部特征（脸型、五官、肤色），不改变性别和年龄感。2. 采用皮克斯电影级3D渲染质感，皮肤细腻，眼睛明亮有神。3. 头像完整显示在预留区域内，融合边缘自然无痕。4. 严格保持证书其余所有内容（背景、文字、徽章、装饰图案、整体配色）完全不变。5. 特别注意：完全保护证书底部的「体验项目」、「体验日期」、「纪念编号」三个文字标签及其对应填写区域，不得有任何覆盖、模糊或修改。'
+  }
+
+  const requestBody: Record<string, unknown> = {
+    model,
+    prompt,
+    image: imageRefs,
+    size,
+    output_format: 'png',
+    watermark: false,
+  }
+  if (maskImageUrl) requestBody.mask_image_url = maskImageUrl
 
   const response = await withTimeout(
     fetch(`${baseUrl}/api/v3/images/generations`, {
@@ -827,14 +903,7 @@ export async function generateCertificateFromPhoto(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        prompt,
-        image: [templateUrl, userPhotoUrl],
-        size,
-        output_format: 'png',
-        watermark: false,
-      }),
+      body: JSON.stringify(requestBody),
     }),
     timeoutMs,
   )
