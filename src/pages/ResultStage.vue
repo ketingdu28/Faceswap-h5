@@ -132,9 +132,19 @@ async function buildCertBlob(): Promise<Blob | null> {
     const resolvedBase = baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')
       ? baseSrc
       : await toDataUrl(baseSrc).catch(() => baseSrc)
+    // 本地静态资源不走 crossOrigin（Vite dev 不对静态文件返回 CORS 头时会导致 naturalWidth=0）
+    // 改用 fetch → blobURL，blob 天然同源，canvas 不被污染
+    const overlayBlobUrl = await fetch(textOverlay)
+      .then(r => r.blob())
+      .then(b => URL.createObjectURL(b))
     const [baseImg, overlayImg] = await Promise.all([
       loadImg(resolvedBase),
-      loadImg(textOverlay),
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => { URL.revokeObjectURL(overlayBlobUrl); resolve(img) }
+        img.onerror = () => { URL.revokeObjectURL(overlayBlobUrl); reject(new Error('overlay load failed')) }
+        img.src = overlayBlobUrl
+      }),
     ])
     // 以前景遮罩 PNG 的原始尺寸为基准（设计尺寸，不受 AI 生成分辨率影响）
     // AI 底图缩放填充至同尺寸，确保两层像素级对齐

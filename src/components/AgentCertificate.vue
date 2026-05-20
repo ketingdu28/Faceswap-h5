@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import textOverlay from '../assets/certificate-template.png'
 
 const props = defineProps<{
@@ -43,15 +43,19 @@ async function load(url: string) {
 
 onMounted(() => load(props.imageUrl))
 watch(() => props.imageUrl, load)
+
+// 底层 AI 图用 CSS background，遮罩 img 单独在 DOM 中撑开容器高度
+const bgStyle = computed(() => {
+  const src = localImageUrl.value || props.imageUrl
+  if (!src) return {}
+  return { backgroundImage: `url('${src.replace(/'/g, '%27')}')` }
+})
 </script>
 
 <template>
   <section class="glass-panel relative w-full p-0 overflow-hidden rounded-[30px]" data-certificate>
-    <div class="cert-stage">
-      <!-- 底层：AI 皮克斯肖像（已转为 data: URL，无 CORS 问题） -->
-      <img :src="localImageUrl || imageUrl" alt="ai portrait" class="cert-layer" />
-      <!-- 顶层：纯文字透明遮罩 -->
-      <img :src="textOverlay" alt="" class="cert-layer cert-layer--overlay" aria-hidden="true" />
+    <div class="cert-stage" :style="bgStyle">
+      <img :src="textOverlay" alt="" class="cert-overlay" aria-hidden="true" />
     </div>
   </section>
 </template>
@@ -68,27 +72,16 @@ watch(() => props.imageUrl, load)
   backdrop-filter: blur(12px);
 }
 
-/* Grid 叠放：两层占同一个格子 */
+/* 遮罩 img 是唯一 flow 元素，撑开容器高度；AI 底图作为 background-image 铺满同一区域 */
 .cert-stage {
-  display: grid;
   width: 100%;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
-/* 底层：height:auto 按原始比例撑开 grid 行高 */
-.cert-layer {
-  grid-area: 1 / 1;
+.cert-overlay {
   display: block;
   width: 100%;
   height: auto;
-}
-
-/* 顶层：height:100% 填满 grid 行高（由底层决定），object-fit:fill 精确拉伸覆盖
-   CSS Grid 中 height:100% 相对于 grid area 的确定高度，与 position:absolute 不同，可正确解析 */
-.cert-layer--overlay {
-  grid-area: 1 / 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
 }
 </style>
