@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Download, RotateCcw } from 'lucide-vue-next'
 import AgentCertificate from '../components/AgentCertificate.vue'
+import SceneComposite from '../components/SceneComposite.vue'
 import { useAgentFlowStore } from '../stores/agentFlow'
 import { faceSwapClient } from '../services/faceSwapClient'
 import { generateCartoonAvatar, generateCertificateFromPhoto } from '../services/cloudFaceSwapClient'
@@ -11,6 +12,7 @@ import textOverlay from '../assets/certificate-template.png'
 
 const router = useRouter()
 const flow = useAgentFlowStore()
+const sceneCompositeRef = ref<InstanceType<typeof SceneComposite> | null>(null)
 const exportedImage = ref<string | null>(null)
 const exportMessage = ref('')
 const isExporting = ref(false)
@@ -26,6 +28,7 @@ const zh = {
   tapToSave: '\u70b9\u51fb\u4fdd\u5b58\u56fe\u7247',
   teaserHidden: '\u6f14\u793a\u6a21\u5f0f\u4e0b\u9690\u85cf\u8bc1\u4e66\u5bfc\u51fa\u533a\uff0c\u4ec5\u5c55\u793a\u6362\u8138\u7ed3\u679c\u3002',
   exporting: '\u5bfc\u51fa\u4e2d...',
+  saveScene: '\u4fdd\u5b58\u573a\u666f\u81f3\u6863\u6848',
   saveCertificate: '\u4fdd\u5b58\u8bc1\u4e66\u81f3\u6863\u6848',
   longPressSave: '\u957f\u6309\u56fe\u7247\u4fdd\u5b58',
   regenerate: '\u91cd\u65b0\u751f\u6210',
@@ -52,43 +55,31 @@ const floatingBubbles = Array.from({ length: 20 }, (_, index) => ({
 }))
 
 async function downloadResultImage() {
-  const url = resultImage.value
-  if (!url || isDownloading.value) return
+  if (!resultImage.value || isDownloading.value) return
   isDownloading.value = true
   try {
-    // 用 canvas 将调色滤镜烘焙进图片，保证下载文件与预览视觉一致
-    const img = await loadImg(
-      url.startsWith('data:') || url.startsWith('blob:')
-        ? url
-        : await toDataUrl(url).catch(() => url)
-    )
-    const canvas = document.createElement('canvas')
-    canvas.width = img.naturalWidth
-    canvas.height = img.naturalHeight
-    const ctx = canvas.getContext('2d')!
-    ctx.filter = RESULT_IMG_FILTER
-    ctx.drawImage(img, 0, 0)
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95))
-    if (!blob) throw new Error('canvas export failed')
+    // 优先从 SceneComposite 取合成 Blob（换脸结果 + 前景遮罩）
+    const blob = await sceneCompositeRef.value?.compositeToBlob() ?? null
+    if (!blob) throw new Error('composite blob unavailable')
     const objectUrl = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = `xmeta-result-${Date.now()}.jpg`
+    link.download = `xmeta-result-${Date.now()}.png`
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     setTimeout(() => URL.revokeObjectURL(objectUrl), 10000)
   } catch {
-    // 跨域或 canvas 失败时降级直接打开原图
-    window.open(url, '_blank', 'noopener')
+    // SceneComposite 不可用时降级直接打开原图
+    window.open(resultImage.value, '_blank', 'noopener')
   } finally {
     isDownloading.value = false
   }
 }
 
 function triggerCertificateDownload(url: string) {
-  const fileName = `xmeta-certificate-${Date.now()}.jpg`
+  const fileName = `xmeta-certificate-${Date.now()}.png`
   const link = document.createElement('a')
   link.href = url
   link.download = fileName
@@ -113,18 +104,8 @@ let logTimer: number | undefined
 const isReady = computed(() => Boolean(flow.resultImageUrl))
 const resultImage = computed(() => flow.resultImageUrl ?? flow.sourceImageUrl)
 
-// ─── 换脸结果预览图样式 ────────────────────────────────────────────────────────
-// 调色参数统一在此处修改，预览和下载保存的图片会自动保持一致
-const RESULT_IMG_FILTER = 'saturate(130%) contrast(90%) brightness(110%)'
 
-const resultImgStyle = {
-  maxHeight: '70vh',
-  minHeight: '300px',
-  borderRadius: '10px',
-  objectFit: 'cover' as const,   // contain = 完整显示不裁切；'cover' = 填满裁切
-  objectPosition: 'center top',
-  filter: RESULT_IMG_FILTER,
-}
+
 
 const cartoonFailed = ref(false)
 const cartoonErrorMsg = ref('')
@@ -166,7 +147,7 @@ async function buildCertBlob(): Promise<Blob | null> {
     // Layer 2（顶层）：纯文字透明遮罩，与底图严格等尺寸叠加
     ctx.drawImage(overlayImg, 0, 0, W, H)
     return await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+      canvas.toBlob(resolve, 'image/png')
     })
   } catch {
     return null
@@ -331,7 +312,7 @@ async function retryCert() {
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.crossOrigin = 'anonymous'
+    img.crossOrigin = 'Anonymous'
     img.onload = () => resolve(img)
     img.onerror = reject
     // 加时间戳绕过浏览器非 CORS 缓存，强制发起新请求以携带 CORS 头
@@ -451,7 +432,7 @@ onUnmounted(() => {
         <span class="v2-halo text-[10px] text-[#f8ddb0]/80">Style {{ flow.selectedStyle }}</span>
       </header>
 
-      <div class="card-shell overflow-hidden rounded-[30px] p-3">
+      <div class="card-shell rounded-[30px] p-3">
         <div class="section-heading section-heading--result mb-2">
           <div class="section-heading__row">
             <p class="section-heading__title">{{ zh.resultPreview }}</p>
@@ -484,7 +465,13 @@ onUnmounted(() => {
             <div class="particle-ascension pointer-events-none absolute inset-x-0 bottom-0 h-full" />
             <div class="particle-ascension particle-ascension--b pointer-events-none absolute inset-x-0 bottom-0 h-full" />
             <button type="button" class="group relative z-10 block w-full" :disabled="isDownloading" @click="downloadResultImage">
-              <img :src="resultImage || ''" alt="AI result" class="w-full object-cover" :style="resultImgStyle" />
+              <!-- 换脸结果 + 前景遮罩叠加，sceneId 对应所选模板 -->
+              <SceneComposite
+                ref="sceneCompositeRef"
+                :face-url="resultImage || ''"
+                :scene-id="flow.currentSceneId"
+                class="w-full"
+              />
               <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/0 transition-colors duration-200 group-hover:bg-black/35">
                 <Download class="h-8 w-8 text-white opacity-0 drop-shadow-lg transition-opacity duration-200 group-hover:opacity-100" />
                 <span class="font-mono text-xs tracking-wider text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -498,7 +485,7 @@ onUnmounted(() => {
 
       <div
         v-if="!teaserMode"
-        class="card-shell rounded-[30px] p-0 w-full overflow-hidden"
+        class="card-shell rounded-[30px] p-0 w-full"
       >
         <!-- ── AI 证书路径（CERT_TEMPLATE_URL 已配置）──────────────────── -->
         <!-- AI 证书已生成：底层 AI 肖像 + 顶层文字透明遮罩 -->
@@ -548,6 +535,19 @@ onUnmounted(() => {
       </div>
 
       <div class="card-shell rounded-[30px] p-3">
+        <!-- 保存场景照片（换脸结果 + 前景遮罩合成图） -->
+        <button
+          type="button"
+          class="amber-action mb-2 w-full rounded-[30px] px-4 py-3 font-mono text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="isDownloading || !isReady || teaserMode"
+          @click="downloadResultImage"
+        >
+          <span class="inline-flex items-center gap-2">
+            <Download class="h-4 w-4" />
+            {{ isDownloading ? zh.saving : zh.saveScene }}
+          </span>
+        </button>
+        <!-- 保存游戏证书 -->
         <button
           type="button"
           class="amber-action mb-2 w-full rounded-[30px] px-4 py-3 font-mono text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"

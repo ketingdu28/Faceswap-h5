@@ -1,17 +1,56 @@
 <script setup lang="ts">
+import { ref, watch, onMounted } from 'vue'
 import textOverlay from '../assets/certificate-template.png'
 
-defineProps<{
+const props = defineProps<{
   imageUrl: string
 }>()
+
+// 将外部 URL 转为 data: URL，规避 Volces CDN 无 CORS 头导致的图片加载失败
+// data: URL 不需要 crossorigin 属性，可直接用于展示和 Canvas 导出
+const localImageUrl = ref('')
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function resolveUrl(url: string): Promise<string> {
+  if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url
+  // ① 直连 CORS fetch
+  try {
+    const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`, {
+      mode: 'cors', cache: 'no-store',
+    })
+    if (res.ok) return blobToDataUrl(await res.blob())
+  } catch { /* 继续尝试代理 */ }
+  // ② 代理 fetch（服务端加 CORS 头）
+  try {
+    const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`)
+    if (res.ok) return blobToDataUrl(await res.blob())
+  } catch { /* 忽略 */ }
+  // ③ 兜底直接使用原 URL（无 crossorigin，展示正常但 Canvas 导出可能失败）
+  return url
+}
+
+async function load(url: string) {
+  localImageUrl.value = await resolveUrl(url)
+}
+
+onMounted(() => load(props.imageUrl))
+watch(() => props.imageUrl, load)
 </script>
 
 <template>
-  <section class="glass-panel relative w-full p-0" data-certificate>
+  <section class="glass-panel relative w-full p-0 overflow-hidden rounded-[30px]" data-certificate>
     <div class="cert-stage">
-      <!-- Layer 1 (底层): AI 生成的皮克斯肖像 + 背景 -->
-      <img :src="imageUrl" alt="ai portrait" class="cert-layer" />
-      <!-- Layer 2 (顶层): 纯文字透明遮罩，与底图严格等尺寸叠加 -->
+      <!-- 底层：AI 皮克斯肖像（已转为 data: URL，无 CORS 问题） -->
+      <img :src="localImageUrl || imageUrl" alt="ai portrait" class="cert-layer" />
+      <!-- 顶层：纯文字透明遮罩 -->
       <img :src="textOverlay" alt="" class="cert-layer cert-layer--overlay" aria-hidden="true" />
     </div>
   </section>
@@ -29,25 +68,19 @@ defineProps<{
   backdrop-filter: blur(12px);
 }
 
+/* Grid 叠放：两层占同一个格子 */
 .cert-stage {
-  position: relative;
+  display: grid;
   width: 100%;
 }
 
-/* 底层：normal flow 撑开容器高度 */
-.cert-layer {
+/* 底层和顶层完全相同的缩放规则：width 100% + height auto
+   两张原图尺寸相同，按各自比例等比缩放后天然对齐，无需拉伸 */
+.cert-layer,
+.cert-layer--overlay {
+  grid-area: 1 / 1;
   display: block;
   width: 100%;
   height: auto;
-}
-
-/* 顶层：绝对定位覆盖底层，宽高 100% 严格对齐 */
-.cert-layer--overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
 }
 </style>

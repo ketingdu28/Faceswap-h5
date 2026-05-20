@@ -151,6 +151,10 @@ function selectTemplate(templateIdx: number) {
   flow.setStyle(pendingScene.value)
   selectedTemplateIdx.value = templateIdx
 
+  // 场景编号 1–9：A1=1 A2=2 A3=3 / B1=4 B2=5 B3=6 / C1=7 C2=8 C3=9
+  const styleBase: Record<string, number> = { A: 0, B: 3, C: 6 }
+  flow.setSceneId((styleBase[pendingScene.value] ?? 0) + templateIdx + 1)
+
   // 优先使用 .env.local 中配置的高清 AI 底图 URL；
   // 未配置时回退到本地预览缩略图路径（Vite 打包后自动加哈希，ensurePublicTargetUrl 会上传 ImgBB）
   const aiUrl = aiTemplateUrls[pendingScene.value]?.[templateIdx]

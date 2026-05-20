@@ -17,6 +17,7 @@ interface PersistedState {
   sourceImageUrl: string | null
   sourceImageBase64: string | null
   selectedStyle: StyleOption
+  currentSceneId: number
   resultImageUrl: string | null
   certificateMeta: CertificateMeta
   cloudFileID: string | null
@@ -80,6 +81,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
   const cloudFileID = ref<string | null>(persisted?.cloudFileID ?? null)
   /** 用户选定的模板底图公网 URL（覆盖 STYLE_TARGET_URLS 默认值） */
   const templateTargetUrl = ref<string | null>(null)
+  /** 当前选中的场景编号 1–9（A1=1…C3=9），用于 SceneComposite 前景图叠加 */
+  const currentSceneId = ref<number>(persisted?.currentSceneId ?? 1)
   /** 皮克斯卡通头像 URL（独立于换脸结果，用于证书展示，持久化到 sessionStorage） */
   const cartoonAvatarUrl = ref<string | null>(persisted?.cartoonAvatarUrl ?? null)
   /** 即梦 AI 生成的完整游戏证书图片 URL（持久化到 sessionStorage） */
@@ -114,6 +117,10 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     templateTargetUrl.value = url
   }
 
+  function setSceneId(id: number) {
+    currentSceneId.value = id
+  }
+
   function setCartoonAvatar(url: string | null) {
     cartoonAvatarUrl.value = url
   }
@@ -141,13 +148,14 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
   }
 
   watch(
-    [sourceImageUrl, sourceImageBase64, selectedStyle, resultImageUrl, certificateMeta, cloudFileID, cartoonAvatarUrl, aiCertificateUrl],
+    [sourceImageUrl, sourceImageBase64, selectedStyle, currentSceneId, resultImageUrl, certificateMeta, cloudFileID, cartoonAvatarUrl, aiCertificateUrl],
     () => {
       if (typeof window === 'undefined') return
       const payload: PersistedState = {
         sourceImageUrl: sourceImageUrl.value,
         sourceImageBase64: sourceImageBase64.value,
         selectedStyle: selectedStyle.value,
+        currentSceneId: currentSceneId.value,
         resultImageUrl: resultImageUrl.value,
         certificateMeta: certificateMeta.value,
         cloudFileID: cloudFileID.value,
@@ -163,6 +171,8 @@ export const useAgentFlowStore = defineStore('agentFlow', () => {
     sourceImageUrl,
     sourceImageBase64,
     selectedStyle,
+    currentSceneId,
+    setSceneId,
     resultImageUrl,
     isGenerating,
     certificateMeta,
