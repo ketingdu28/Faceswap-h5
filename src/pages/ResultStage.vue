@@ -136,15 +136,19 @@ async function buildCertBlob(): Promise<Blob | null> {
       loadImg(resolvedBase),
       loadImg(textOverlay),
     ])
-    const W = baseImg.naturalWidth
-    const H = baseImg.naturalHeight
+    // 以前景遮罩 PNG 的原始尺寸为基准（设计尺寸，不受 AI 生成分辨率影响）
+    // AI 底图缩放填充至同尺寸，确保两层像素级对齐
+    const W = overlayImg.naturalWidth
+    const H = overlayImg.naturalHeight
+    console.log('[CertBlob] 底图尺寸:', baseImg.naturalWidth, '×', baseImg.naturalHeight,
+                '前景遮罩尺寸:', W, '×', H)
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
     const ctx = canvas.getContext('2d')!
-    // Layer 1（底层）：AI 皮克斯肖像，从 (0,0) 全尺寸绘制
+    // Layer 1（底层）：AI 皮克斯肖像，缩放到遮罩尺寸
     ctx.drawImage(baseImg, 0, 0, W, H)
-    // Layer 2（顶层）：纯文字透明遮罩，与底图严格等尺寸叠加
+    // Layer 2（顶层）：纯文字透明遮罩，原始尺寸绘制
     ctx.drawImage(overlayImg, 0, 0, W, H)
     return await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, 'image/png')

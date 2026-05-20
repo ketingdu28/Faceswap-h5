@@ -74,13 +74,21 @@ watch(() => props.imageUrl, load)
   width: 100%;
 }
 
-/* 底层和顶层完全相同的缩放规则：width 100% + height auto
-   两张原图尺寸相同，按各自比例等比缩放后天然对齐，无需拉伸 */
-.cert-layer,
-.cert-layer--overlay {
+/* 底层：height:auto 按原始比例撑开 grid 行高 */
+.cert-layer {
   grid-area: 1 / 1;
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* 顶层：height:100% 填满 grid 行高（由底层决定），object-fit:fill 精确拉伸覆盖
+   CSS Grid 中 height:100% 相对于 grid area 的确定高度，与 position:absolute 不同，可正确解析 */
+.cert-layer--overlay {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
 }
 </style>
