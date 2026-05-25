@@ -49,6 +49,7 @@ const emit = defineEmits<{
 
 const canvasRef  = ref<HTMLCanvasElement | null>(null)
 const resultUrl  = ref('')   // 合成结果的 data URL，驱动 <img> 展示，保证比例正确
+const fallbackFaceUrl = ref('')  // canvas 被污染时降级：直接显示换脸图（无前景遮罩）
 const isDrawing  = ref(false)
 const drawError  = ref('')
 
@@ -85,9 +86,36 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const img = new Image()
     img.crossOrigin = 'Anonymous'
     img.onload  = () => resolve(img)
-    img.onerror = () => reject(new Error(`图片加载失败：${src.slice(0, 80)}`))
+    img.onerror = () => {
+      // CORS failed (CDN无CORS头) — 降级为无crossOrigin，图片可正常加载但canvas会被污染
+      const img2 = new Image()
+      img2.onload  = () => resolve(img2)
+      img2.onerror = () => reject(new Error(`图片加载失败：${src.slice(0, 80)}`))
+      img2.src = src
+    }
     img.src = src
   })
+}
+
+/** 加载本地 public/ 静态资源，用 fetch+blob URL 规避 crossOrigin='Anonymous' 导致的加载失败 */
+async function loadLocalAsset(url: string): Promise<HTMLImageElement> {
+  let blobUrl: string | null = null
+  try {
+    const blob = await fetch(url).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.blob()
+    })
+    blobUrl = URL.createObjectURL(blob)
+    return await new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload  = () => { URL.revokeObjectURL(blobUrl!); resolve(img) }
+      img.onerror = () => { URL.revokeObjectURL(blobUrl!); reject(new Error(`图片加载失败：${url}`)) }
+      img.src = blobUrl!
+    })
+  } catch (err) {
+    if (blobUrl) URL.revokeObjectURL(blobUrl)
+    throw err instanceof Error ? err : new Error(`图片加载失败：${url}`)
+  }
 }
 
 // ─── 核心渲染函数 ─────────────────────────────────────────────────────────────
@@ -102,10 +130,21 @@ async function draw() {
 
   try {
     const resolvedFaceUrl = await ensureDataUrl(props.faceUrl)
-    const [faceImg, fgImg] = await Promise.all([
-      loadImage(resolvedFaceUrl),
-      loadImage(scene.fgUrl),
-    ])
+    console.log('[SceneComposite] faceUrl:', props.faceUrl.slice(0, 60), '→ resolved:', resolvedFaceUrl.slice(0, 60))
+    console.log('[SceneComposite] fgUrl:', scene.fgUrl)
+
+    let faceImg: HTMLImageElement
+    try {
+      faceImg = await loadImage(resolvedFaceUrl)
+    } catch (e) {
+      throw new Error(`换脸图加载失败：${String(e)}`)
+    }
+    let fgImg: HTMLImageElement
+    try {
+      fgImg = await loadLocalAsset(scene.fgUrl)
+    } catch (e) {
+      throw new Error(`前景图加载失败（${scene.fgUrl}）：${String(e)}`)
+    }
 
     // Canvas 以前景图尺寸为准（前景图定义了正确的宽高比，通常为 9:16）
     // 人脸图拉伸到同尺寸；若两图设计上对齐，则人脸内容自然落在正确位置
@@ -126,14 +165,23 @@ async function draw() {
     ctx.drawImage(fgImg, 0, 0, W, H)
 
     // 转为 data URL 驱动 <img> 展示，彻底解决 canvas CSS 比例失真
-    resultUrl.value = canvas.toDataURL('image/png')
-
-    canvas.toBlob(
-      (blob) => { if (blob) emit('ready', blob) },
-      'image/png', 1.0,
-    )
+    // 若换脸图无 CORS 头（即梦 CDN），canvas 会被污染，toDataURL 抛 SecurityError
+    try {
+      resultUrl.value = canvas.toDataURL('image/png')
+      fallbackFaceUrl.value = ''
+      canvas.toBlob(
+        (blob) => { if (blob) emit('ready', blob) },
+        'image/png', 1.0,
+      )
+    } catch {
+      // canvas 被污染 — 降级：直接展示换脸图（无前景遮罩），不报错
+      console.warn('[SceneComposite] canvas 被污染，降级展示换脸图')
+      fallbackFaceUrl.value = resolvedFaceUrl
+      resultUrl.value = ''
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    console.error('[SceneComposite] draw error:', err)
     drawError.value = msg
     emit('error', msg)
   } finally {
@@ -142,10 +190,17 @@ async function draw() {
 }
 
 async function compositeToBlob(): Promise<Blob | null> {
-  if (!resultUrl.value) await draw()
+  if (!resultUrl.value && !fallbackFaceUrl.value) await draw()
   const canvas = canvasRef.value
   if (!canvas) return null
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1.0))
+  // canvas 被污染时 toBlob 会抛 SecurityError，返回 null 让调用方降级处理
+  return new Promise((resolve) => {
+    try {
+      canvas.toBlob(resolve, 'image/png', 1.0)
+    } catch {
+      resolve(null)
+    }
+  })
 }
 
 defineExpose({ compositeToBlob })
@@ -162,6 +217,14 @@ watch([() => props.faceUrl, () => props.sceneId, filterSaturate, filterContrast,
     <img
       v-if="resultUrl"
       :src="resultUrl"
+      alt="scene composite"
+      class="scene-img"
+      :class="{ 'scene-img--loading': isDrawing }"
+    />
+    <!-- canvas 被污染降级：直接展示换脸图（无前景遮罩） -->
+    <img
+      v-else-if="fallbackFaceUrl"
+      :src="fallbackFaceUrl"
       alt="scene composite"
       class="scene-img"
       :class="{ 'scene-img--loading': isDrawing }"
