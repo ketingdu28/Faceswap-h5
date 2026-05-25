@@ -399,8 +399,8 @@ async function exportCertificate() {
 }
 
 async function regenerate() {
-  flow.resetResult()
-  await router.push('/pre-stage')
+  flow.resetSourceImage()   // 清除所有状态（含来源图、模板选择、生成结果）
+  await router.replace('/')  // 跳回主界面，replace 避免用户回退到旧结果页
 }
 
 onMounted(() => {
