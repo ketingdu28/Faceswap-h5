@@ -614,7 +614,8 @@ async function generateViaJimeng(input: GenerateFaceSwapInput): Promise<Generate
           image: [targetImageUrl, swapImageUrl],
           size,
           output_format: 'png',
-          watermark: false,
+          // watermark: false 不是 Ark API 的合法字段，实际无效；
+          // 如需去水印，需在火山引擎控制台确认账号套餐是否支持，或联系商务申请。
         }),
       }),
       timeoutMs,
@@ -703,7 +704,6 @@ export async function generateCartoonAvatar(imageUrl: string): Promise<string> {
         image: [userPhotoUrl, userPhotoUrl],
         size,
         output_format: 'png',
-        watermark: false,
       }),
     }),
     timeoutMs,
@@ -770,7 +770,6 @@ export async function generateCertificateWithAvatar(
         image: [templateUrl, avatarUrl],
         size,
         output_format: 'png',
-        watermark: false,
       }),
     }),
     timeoutMs,
@@ -892,7 +891,6 @@ export async function generateCertificateFromPhoto(
     image: imageRefs,
     size,
     output_format: 'png',
-    watermark: false,
   }
   if (maskImageUrl) requestBody.mask_image_url = maskImageUrl
 

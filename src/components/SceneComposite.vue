@@ -40,7 +40,7 @@ const props = defineProps<{
 // 滤镜实际值：prop > env 变量 > 内置默认值
 // 注意：.env.local 被 gitignore，Vercel 构建时不含该文件；
 // 需在 Vercel 控制台 Environment Variables 中单独配置，或在此修改内置默认值。
-const filterSaturate   = computed(() => props.saturate   ?? Number(import.meta.env.VITE_SCENE_FILTER_SATURATE   ?? 135))
+const filterSaturate   = computed(() => props.saturate   ?? Number(import.meta.env.VITE_SCENE_FILTER_SATURATE   ?? 125))
 const filterContrast   = computed(() => props.contrast   ?? Number(import.meta.env.VITE_SCENE_FILTER_CONTRAST   ?? 105))
 const filterBrightness = computed(() => props.brightness ?? Number(import.meta.env.VITE_SCENE_FILTER_BRIGHTNESS ?? 100))
 
