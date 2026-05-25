@@ -223,14 +223,21 @@ watch([() => props.faceUrl, () => props.sceneId, filterSaturate, filterContrast,
       class="scene-img"
       :class="{ 'scene-img--loading': isDrawing }"
     />
-    <!-- canvas 被污染降级：直接展示换脸图（无前景遮罩） -->
-    <img
+    <!-- canvas 被污染降级：CSS 双层模拟 canvas 合成效果 -->
+    <div
       v-else-if="fallbackFaceUrl"
-      :src="fallbackFaceUrl"
-      alt="scene composite"
-      class="scene-img"
+      class="scene-fallback"
       :class="{ 'scene-img--loading': isDrawing }"
-    />
+    >
+      <img :src="fallbackFaceUrl" alt="scene composite" class="scene-fallback-face" />
+      <img
+        v-if="currentScene"
+        :src="currentScene.fgUrl"
+        alt=""
+        aria-hidden="true"
+        class="scene-fallback-fg"
+      />
+    </div>
     <!-- 加载中占位（保持宽高比，避免布局跳动） -->
     <div v-else class="scene-placeholder" :class="{ 'scene-placeholder--drawing': isDrawing }" />
     <p v-if="drawError" class="scene-error">{{ drawError }}</p>
@@ -270,6 +277,29 @@ watch([() => props.faceUrl, () => props.sceneId, filterSaturate, filterContrast,
 @keyframes pulse {
   0%, 100% { opacity: 0.4; }
   50%       { opacity: 0.8; }
+}
+
+.scene-fallback {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 941 / 1672;
+  border-radius: 30px;
+  overflow: hidden;
+  transition: opacity 0.2s;
+}
+
+.scene-fallback-face {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-fallback-fg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .scene-error {
